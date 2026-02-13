@@ -1,4 +1,5 @@
-import type { ITool, ToolId, ScanOptions, ScanResult, ExportFormat } from '../../types/index.js';
+import type { ToolId, ScanOptions, Finding } from '../../types/index.js';
+import { BaseTool } from '../base-tool.js';
 
 /**
  * Auto-Commit tool.
@@ -11,31 +12,21 @@ import type { ITool, ToolId, ScanOptions, ScanResult, ExportFormat } from '../..
  * 5. Dry-run pre-commit hooks if configured
  * 6. Present CommitProposal for user approval — never auto-commit
  *
- * The ScanResult for this tool is a bit different — the "findings" represent
- * changed files, and the proposal is in metadata. See types/git.ts.
+ * The ScanResult for this tool stores the CommitProposal in metadata.
+ * Findings represent individual constraint violations or hook issues.
  */
-export class CommitTool implements ITool {
+export class CommitTool extends BaseTool {
   readonly id: ToolId = 'commit';
   readonly name = 'Auto-Commit';
   readonly description = 'Stage changed files and generate a commit message for approval.';
 
-  private abortController?: AbortController;
-
-  async execute(_options: ScanOptions): Promise<ScanResult> {
+  protected async run(_options: ScanOptions): Promise<Finding[]> {
     // TODO: Phase 1 — detect changed files
     // TODO: Phase 2 — auto-stage
     // TODO: Phase 3 — generate commit message via model
     // TODO: Phase 4 — validate constraints
     // TODO: Phase 5 — dry-run pre-commit hooks
-    // TODO: Phase 6 — assemble CommitProposal
-    throw new Error('CommitTool.execute not yet implemented');
-  }
-
-  cancel(): void {
-    this.abortController?.abort();
-  }
-
-  export(_result: ScanResult, _format: ExportFormat): string {
-    throw new Error('CommitTool.export not yet implemented');
+    // TODO: Phase 6 — assemble CommitProposal into metadata
+    throw new Error('CommitTool.run not yet implemented');
   }
 }

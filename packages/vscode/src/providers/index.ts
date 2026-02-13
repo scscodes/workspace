@@ -27,11 +27,13 @@ export class ProviderManager implements vscode.Disposable {
    * Register built-in providers and activate the configured one.
    */
   async initialize(): Promise<void> {
-    // Register providers
+    // Register providers and inject settings
     const vscodeLm = new VscodeLmProvider();
+    vscodeLm.setSettingsManager(this.settings);
     this.providers.set(vscodeLm.id, vscodeLm);
 
     const directApi = new DirectApiProvider();
+    directApi.setSettingsManager(this.settings);
     this.providers.set(directApi.id, directApi);
 
     // Activate from current settings

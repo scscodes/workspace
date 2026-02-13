@@ -1,4 +1,5 @@
-import type { ITool, ToolId, ScanOptions, ScanResult, ExportFormat } from '../../types/index.js';
+import type { ToolId, ScanOptions, Finding } from '../../types/index.js';
+import { BaseTool } from '../base-tool.js';
 
 /**
  * Lint & Best Practice analysis tool.
@@ -10,26 +11,16 @@ import type { ITool, ToolId, ScanOptions, ScanResult, ExportFormat } from '../..
  *
  * Languages: TypeScript/JavaScript, Python
  */
-export class LintTool implements ITool {
+export class LintTool extends BaseTool {
   readonly id: ToolId = 'lint';
   readonly name = 'Lint & Best Practice';
   readonly description =
     'Run linters and model-driven analysis for code smells and best practices.';
 
-  private abortController?: AbortController;
-
-  async execute(_options: ScanOptions): Promise<ScanResult> {
+  protected async run(_options: ScanOptions): Promise<Finding[]> {
     // TODO: Phase 1 — run configured linters
     // TODO: Phase 2 — model review for architectural smells
     // TODO: Phase 3 — suggest linter config improvements
-    throw new Error('LintTool.execute not yet implemented');
-  }
-
-  cancel(): void {
-    this.abortController?.abort();
-  }
-
-  export(_result: ScanResult, _format: ExportFormat): string {
-    throw new Error('LintTool.export not yet implemented');
+    throw new Error('LintTool.run not yet implemented');
   }
 }

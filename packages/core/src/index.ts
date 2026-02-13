@@ -63,7 +63,7 @@ export {
 export { resolveTier, resolveModelId } from './models/tiers.js';
 
 // ─── Tools ──────────────────────────────────────────────────────────────────
-export { TOOL_REGISTRY, getToolEntry, getToolByCommand } from './tools/index.js';
+export { TOOL_REGISTRY, getToolEntry, getToolByCommand, BaseTool } from './tools/index.js';
 export type { ToolRegistryEntry } from './tools/index.js';
 
 // ─── Git Operations ─────────────────────────────────────────────────────────

@@ -1,5 +1,8 @@
 import type { ToolId } from '../types/index.js';
 
+// Re-export the base class for tool implementations
+export { BaseTool } from './base-tool.js';
+
 /**
  * Metadata for a registered tool.
  * Used by chat participant routing, sidebar display, and command registration.
