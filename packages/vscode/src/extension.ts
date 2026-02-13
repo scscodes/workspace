@@ -4,7 +4,7 @@ import { ProviderManager } from './providers/index.js';
 import { ToolRunner } from './tools/index.js';
 import { registerCommands } from './commands/index.js';
 import { registerChatParticipant } from './chat/index.js';
-import { registerSidebar } from './sidebar/index.js';
+import { registerSidebar, AidevSidebarProvider } from './sidebar/index.js';
 import { createStatusBarItems } from './status/index.js';
 
 /**
@@ -33,10 +33,13 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   context.subscriptions.push(toolRunner);
 
   // 4. UI components — all independent of each other
+  const sidebarProvider = new AidevSidebarProvider(context, settings, toolRunner);
+
   context.subscriptions.push(
     ...registerCommands(context, settings, toolRunner),
     ...registerChatParticipant(context, providers, toolRunner),
     ...registerSidebar(context, toolRunner),
+    vscode.window.registerWebviewViewProvider(AidevSidebarProvider.viewType, sidebarProvider),
     ...createStatusBarItems(context),
   );
 

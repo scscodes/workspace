@@ -7,8 +7,12 @@
   "engines": {
     "vscode": "^1.95.0"
   },
-  "categories": ["Other"],
-  "activationEvents": ["onStartupFinished"],
+  "categories": [
+    "Other"
+  ],
+  "activationEvents": [
+    "onStartupFinished"
+  ],
   "main": "./dist/extension.js",
   "scripts": {
     "build": "node esbuild.config.mjs",
@@ -23,7 +27,11 @@
       "properties": {
         "aidev.mode": {
           "type": "string",
-          "enum": ["performance", "balanced", "economy"],
+          "enum": [
+            "performance",
+            "balanced",
+            "economy"
+          ],
           "default": "balanced",
           "description": "Operating mode — controls which model tier is used for chat vs tool tasks.",
           "enumDescriptions": [
@@ -49,7 +57,10 @@
         },
         "aidev.providerSource": {
           "type": "string",
-          "enum": ["ide", "direct"],
+          "enum": [
+            "ide",
+            "direct"
+          ],
           "default": "ide",
           "description": "Model provider source. 'ide' uses your IDE's built-in models (Copilot/Cursor). 'direct' uses your own API keys.",
           "enumDescriptions": [
@@ -59,7 +70,10 @@
         },
         "aidev.directApi.provider": {
           "type": "string",
-          "enum": ["anthropic", "openai"],
+          "enum": [
+            "anthropic",
+            "openai"
+          ],
           "default": "anthropic",
           "description": "API provider when using direct keys."
         },
@@ -75,8 +89,14 @@
         },
         "aidev.enabledLanguages": {
           "type": "array",
-          "items": { "type": "string" },
-          "default": ["typescript", "javascript", "python"],
+          "items": {
+            "type": "string"
+          },
+          "default": [
+            "typescript",
+            "javascript",
+            "python"
+          ],
           "description": "Languages included in analysis scans."
         },
         "aidev.commitConstraints.minLength": {
@@ -103,7 +123,10 @@
         },
         "aidev.commitConstraints.enforcement": {
           "type": "string",
-          "enum": ["warn", "deny"],
+          "enum": [
+            "warn",
+            "deny"
+          ],
           "default": "warn",
           "description": "How to handle constraint violations: 'warn' allows commit with a warning, 'deny' blocks it.",
           "enumDescriptions": [
@@ -136,15 +159,51 @@
       }
     },
     "commands": [
-      { "command": "aidev.scanDeadCode", "title": "AIDev: Scan Dead Code", "icon": "$(search)" },
-      { "command": "aidev.scanLint", "title": "AIDev: Lint & Best Practice Analysis", "icon": "$(checklist)" },
-      { "command": "aidev.pruneComments", "title": "AIDev: Prune Comments", "icon": "$(comment)" },
-      { "command": "aidev.autoCommit", "title": "AIDev: Auto-Commit", "icon": "$(git-commit)" },
-      { "command": "aidev.tldr", "title": "AIDev: TLDR — Summarize Changes", "icon": "$(book)" },
-      { "command": "aidev.branchDiff", "title": "AIDev: Branch Diff — Compare Local vs Remote", "icon": "$(git-compare)" },
-      { "command": "aidev.diffResolve", "title": "AIDev: Diff Resolver — Resolve Merge Conflicts", "icon": "$(git-merge)" },
-      { "command": "aidev.exportResults", "title": "AIDev: Export Results", "icon": "$(export)" },
-      { "command": "aidev.setMode", "title": "AIDev: Set Operating Mode", "icon": "$(settings-gear)" }
+      {
+        "command": "aidev.scanDeadCode",
+        "title": "AIDev: Scan Dead Code",
+        "icon": "$(search)"
+      },
+      {
+        "command": "aidev.scanLint",
+        "title": "AIDev: Lint & Best Practice Analysis",
+        "icon": "$(checklist)"
+      },
+      {
+        "command": "aidev.pruneComments",
+        "title": "AIDev: Prune Comments",
+        "icon": "$(comment)"
+      },
+      {
+        "command": "aidev.autoCommit",
+        "title": "AIDev: Auto-Commit",
+        "icon": "$(git-commit)"
+      },
+      {
+        "command": "aidev.tldr",
+        "title": "AIDev: TLDR — Summarize Changes",
+        "icon": "$(book)"
+      },
+      {
+        "command": "aidev.branchDiff",
+        "title": "AIDev: Branch Diff — Compare Local vs Remote",
+        "icon": "$(git-compare)"
+      },
+      {
+        "command": "aidev.diffResolve",
+        "title": "AIDev: Diff Resolver — Resolve Merge Conflicts",
+        "icon": "$(git-merge)"
+      },
+      {
+        "command": "aidev.exportResults",
+        "title": "AIDev: Export Results",
+        "icon": "$(export)"
+      },
+      {
+        "command": "aidev.setMode",
+        "title": "AIDev: Set Operating Mode",
+        "icon": "$(settings-gear)"
+      }
     ],
     "viewsContainers": {
       "activitybar": [
@@ -157,8 +216,19 @@
     },
     "views": {
       "aidev-sidebar": [
-        { "id": "aidev.toolsView", "name": "Tools" },
-        { "id": "aidev.resultsView", "name": "Results" }
+        {
+          "id": "aidev.toolsView",
+          "name": "Tools"
+        },
+        {
+          "id": "aidev.resultsView",
+          "name": "Results"
+        },
+        {
+          "id": "aidev.sidebarView",
+          "type": "webview",
+          "name": "Dashboard"
+        }
       ]
     },
     "chatParticipants": [
@@ -169,19 +239,41 @@
         "description": "AI developer toolkit — dead code, linting, commits, change summaries",
         "isSticky": false,
         "commands": [
-          { "name": "deadcode", "description": "Scan for dead/unused code" },
-          { "name": "lint", "description": "Lint and best practice analysis" },
-          { "name": "comments", "description": "Prune stale/verbose comments" },
-          { "name": "commit", "description": "Auto-stage and propose a commit (or apply/amend)" },
-          { "name": "tldr", "description": "Summarize recent changes" },
-          { "name": "branchdiff", "description": "Compare local branch against remote tracking branch" },
-          { "name": "resolve", "description": "Detect and resolve merge conflicts" }
+          {
+            "name": "deadcode",
+            "description": "Scan for dead/unused code"
+          },
+          {
+            "name": "lint",
+            "description": "Lint and best practice analysis"
+          },
+          {
+            "name": "comments",
+            "description": "Prune stale/verbose comments"
+          },
+          {
+            "name": "commit",
+            "description": "Auto-stage and propose a commit (or apply/amend)"
+          },
+          {
+            "name": "tldr",
+            "description": "Summarize recent changes"
+          },
+          {
+            "name": "branchdiff",
+            "description": "Compare local branch against remote tracking branch"
+          },
+          {
+            "name": "resolve",
+            "description": "Detect and resolve merge conflicts"
+          }
         ]
       }
     ]
   },
   "dependencies": {
-    "@aidev/core": "0.0.1"
+    "@aidev/core": "0.0.1",
+    "@vscode/codicons": "^0.0.36"
   },
   "devDependencies": {
     "@types/vscode": "^1.95.0",
