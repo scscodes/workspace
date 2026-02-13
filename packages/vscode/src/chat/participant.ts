@@ -193,11 +193,21 @@ async function handleSlashCommand(
     });
 
     if (!result) {
-      stream.markdown('No result — check the error log for details.');
+      stream.markdown('**Error**: Tool execution returned no result. Check the console for details.');
       return;
     }
 
     stream.markdown(`**Status**: ${result.status}\n\n`);
+
+    if (result.status === 'failed') {
+      stream.markdown(`**Error**: ${result.error ?? 'Unknown error occurred'}\n\n`);
+      return;
+    }
+
+    if (result.status === 'cancelled') {
+      stream.markdown('**Cancelled**: Tool execution was cancelled.\n\n');
+      return;
+    }
 
     if (result.findings.length === 0) {
       stream.markdown('No findings.');
@@ -253,8 +263,24 @@ async function executeToolCall(
     if (!result) {
       return {
         toolCallId: callId,
-        content: 'Tool returned no result.',
+        content: 'Tool returned no result. Check console logs for details.',
         isError: true,
+      };
+    }
+
+    if (result.status === 'failed') {
+      return {
+        toolCallId: callId,
+        content: `Tool execution failed: ${result.error ?? 'Unknown error'}`,
+        isError: true,
+      };
+    }
+
+    if (result.status === 'cancelled') {
+      return {
+        toolCallId: callId,
+        content: 'Tool execution was cancelled.',
+        isError: false,
       };
     }
 

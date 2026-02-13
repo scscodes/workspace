@@ -98,13 +98,27 @@ export class TldrTool extends BaseTool {
     this.throwIfCancelled(options);
     const prompt = buildTldrPrompt(entries, scope, since);
 
-    const response = await modelProvider.sendRequest({
-      role: 'chat',
-      messages: [
-        { role: 'system', content: SYSTEM_PROMPT },
-        { role: 'user', content: prompt },
-      ],
-    });
+    let response;
+    try {
+      response = await modelProvider.sendRequest({
+        role: 'chat',
+        messages: [
+          { role: 'system', content: SYSTEM_PROMPT },
+          { role: 'user', content: prompt },
+        ],
+        signal: options.signal,
+      });
+    } catch (error) {
+      findings.push(
+        this.createFinding({
+          title: 'TLDR failed',
+          description: `Failed to generate summary: ${error instanceof Error ? error.message : String(error)}`,
+          location: { filePath: repoRoot, startLine: 0, endLine: 0 },
+          severity: 'error',
+        }),
+      );
+      return findings;
+    }
 
     // Phase 3: Parse model response into structured summary
     this.throwIfCancelled(options);

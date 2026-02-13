@@ -17,9 +17,12 @@ import type { SettingsManager } from '../settings/index.js';
  *
  * Works with:
  * - GitHub Copilot in VSCode (models exposed via Copilot subscription)
- * - Cursor's built-in models (exposed via the same API surface)
  *
- * The vscode.lm API is available in VSCode 1.93+ (stable since 1.95).
+ * IMPORTANT: Cursor IDE does NOT expose models through vscode.lm API.
+ * If you're using Cursor, you must use the Direct API provider instead
+ * (aidev.providerSource: "direct" with API keys configured).
+ *
+ * The vscode.lm API is available in VSCode 1.95+.
  */
 export class VscodeLmProvider implements IModelProvider {
   readonly id = 'vscode-lm';
@@ -36,17 +39,46 @@ export class VscodeLmProvider implements IModelProvider {
   }
 
   async isAvailable(): Promise<boolean> {
+    // Check if vscode.lm API exists
+    if (!vscode.lm) {
+      console.log('AIDev: vscode.lm API not available');
+      return false;
+    }
+
     try {
       const models = await vscode.lm.selectChatModels();
-      return models.length > 0;
-    } catch {
+      console.log(`AIDev: vscode.lm.selectChatModels() returned ${String(models.length)} model(s)`);
+      
+      if (models.length > 0) {
+        console.log(`AIDev: Available models: ${models.map(m => `${m.name} (${m.id})`).join(', ')}`);
+        return true;
+      } else {
+        // Cursor IDE doesn't expose models via vscode.lm API
+        // This is expected behavior in Cursor - users should use direct API provider
+        const isCursor = vscode.env.appName.toLowerCase().includes('cursor');
+        if (isCursor) {
+          console.log('AIDev: No models from vscode.lm API (expected in Cursor). Use direct API provider instead.');
+        } else {
+          console.log('AIDev: No models available from vscode.lm API. Ensure GitHub Copilot is installed and signed in.');
+        }
+        return false;
+      }
+    } catch (error) {
+      console.error('AIDev: Error checking vscode.lm availability:', error);
       return false;
     }
   }
 
   async listModels(): Promise<ResolvedModel[]> {
+    if (!vscode.lm) {
+      console.log('AIDev: vscode.lm API not available for listModels');
+      return [];
+    }
+
     try {
       const models = await vscode.lm.selectChatModels();
+      console.log(`AIDev: listModels() found ${String(models.length)} model(s)`);
+      
       return models.map((m) => ({
         id: m.id,
         name: m.name,
@@ -54,7 +86,8 @@ export class VscodeLmProvider implements IModelProvider {
         role: 'chat' as ModelRole,
         provider: m.vendor,
       }));
-    } catch {
+    } catch (error) {
+      console.error('AIDev: Error listing models:', error);
       return [];
     }
   }
@@ -64,15 +97,48 @@ export class VscodeLmProvider implements IModelProvider {
       throw new Error('VscodeLmProvider: SettingsManager not initialized.');
     }
 
+    if (!vscode.lm) {
+      throw new Error(
+        'vscode.lm API is not available. This extension requires VSCode 1.95+ or Cursor with language model support.',
+      );
+    }
+
     const settings = this.settingsManager.current;
     const model = await this.selectModel(settings.mode, options.role, settings.modelTiers);
 
     if (!model) {
-      throw new Error(
-        `No model available for role "${options.role}" in mode "${settings.mode}". ` +
-          'Configure model tiers in AIDev settings or check that your IDE provides models.',
+      // Try to get any available model as last resort
+      console.log('AIDev: Model selection returned undefined, checking for any available models...');
+      const available = await vscode.lm.selectChatModels();
+      console.log(`AIDev: Found ${String(available.length)} available model(s) for fallback`);
+      
+      if (available.length === 0) {
+        const isCursor = vscode.env.appName.toLowerCase().includes('cursor');
+        const errorMsg = isCursor
+          ? 'Cursor IDE does not expose models through vscode.lm API. ' +
+            'Please use the Direct API provider instead: set aidev.providerSource to "direct" ' +
+            'and configure your API keys (aidev.directApi.provider and aidev.directApi.apiKey).'
+          : 'No language models available from vscode.lm API. ' +
+            'Ensure GitHub Copilot is installed and signed in.';
+        console.error(`AIDev: ${errorMsg}`);
+        throw new Error(errorMsg);
+      }
+      // Use first available model if selection failed
+      const fallbackModel = available[0];
+      console.warn(
+        `AIDev: Model selection failed, using fallback: ${fallbackModel.name} (${fallbackModel.id})`,
       );
+      return this.sendRequestWithModel(fallbackModel, options, settings);
     }
+
+    return this.sendRequestWithModel(model, options, settings);
+  }
+
+  private async sendRequestWithModel(
+    model: vscode.LanguageModelChat,
+    options: ModelRequestOptions,
+    settings: import('@aidev/core').ExtensionSettings,
+  ): Promise<ModelResponse> {
 
     // Build messages for the vscode.lm API
     // TODO: Add native vscode.lm tool support when the LanguageModelChatRequestOptions.tools

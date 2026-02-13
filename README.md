@@ -2,7 +2,7 @@ What's built
 Layer	What	Status
 Settings	SettingsManager with change events, normalizeSettings, validateSettings	Done, 12 tests
 Git ops	executor, status parser, log parser, blame, staging, hooks, commit validation	Done, 20 tests
-Model providers	VscodeLmProvider (vscode.lm API with tier resolution + streaming), DirectApiProvider (Anthropic + OpenAI)	Done
+Model providers	VscodeLmProvider (vscode.lm API - VSCode/Copilot only), DirectApiProvider (Anthropic + OpenAI - required for Cursor)	Done
 Base tool	BaseTool abstract class — lifecycle, cancellation, summary, JSON/MD export	Done
 DeadCodeTool	Static regex patterns + model-driven synthesis, deduplication	Done
 LintTool	ESLint/Pylint wrapping + model-driven smell detection	Done

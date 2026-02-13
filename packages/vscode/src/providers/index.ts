@@ -27,26 +27,74 @@ export class ProviderManager implements vscode.Disposable {
    * Register built-in providers and activate the configured one.
    */
   async initialize(): Promise<void> {
-    // Register providers and inject settings
-    const vscodeLm = new VscodeLmProvider();
-    vscodeLm.setSettingsManager(this.settings);
-    this.providers.set(vscodeLm.id, vscodeLm);
+    try {
+      console.log('AIDev: Initializing providers...');
+      
+      // Register providers and inject settings (only if not already registered)
+      if (!this.providers.has('vscode-lm')) {
+        console.log('AIDev: Registering VscodeLmProvider...');
+        const vscodeLm = new VscodeLmProvider();
+        vscodeLm.setSettingsManager(this.settings);
+        this.providers.set(vscodeLm.id, vscodeLm);
+        console.log('AIDev: VscodeLmProvider registered');
+      }
 
-    const directApi = new DirectApiProvider();
-    directApi.setSettingsManager(this.settings);
-    this.providers.set(directApi.id, directApi);
+      if (!this.providers.has('direct-api')) {
+        console.log('AIDev: Registering DirectApiProvider...');
+        const directApi = new DirectApiProvider();
+        directApi.setSettingsManager(this.settings);
+        this.providers.set(directApi.id, directApi);
+        console.log('AIDev: DirectApiProvider registered');
+      }
 
-    // Activate from current settings
-    await this.activateFromSettings();
+      // Activate from current settings
+      console.log('AIDev: Activating provider from settings...');
+      await this.activateFromSettings();
 
-    // React to settings changes — supports in-flight provider switching
-    this.disposables.push(
-      this.settings.onDidChange(async (e) => {
-        if (e.previous.providerSource !== e.current.providerSource) {
-          await this.activateFromSettings();
-        }
-      }),
-    );
+      // React to settings changes — supports in-flight provider switching
+      // Only register listener once
+      if (this.disposables.length === 0) {
+        this.disposables.push(
+          this.settings.onDidChange(async (e) => {
+            if (e.previous.providerSource !== e.current.providerSource) {
+              console.log('AIDev: Provider source changed, reactivating...');
+              await this.activateFromSettings();
+            }
+          }),
+        );
+      }
+      
+      console.log('AIDev: Provider initialization complete');
+    } catch (error) {
+      console.error('AIDev: Provider initialization failed:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Retry provider activation. Useful when providers may have become available
+   * after initial initialization (e.g., IDE models loading).
+   * 
+   * Includes a short delay to allow models to load, and retries multiple times.
+   */
+  async retryActivation(maxRetries = 3, delayMs = 1000): Promise<void> {
+    for (let attempt = 1; attempt <= maxRetries; attempt++) {
+      console.log(`AIDev: Provider retry attempt ${String(attempt)}/${String(maxRetries)}`);
+      
+      if (attempt > 1) {
+        // Wait before retrying (except first attempt)
+        await new Promise((resolve) => setTimeout(resolve, delayMs));
+      }
+      
+      await this.activateFromSettings();
+      
+      if (this.activeProvider) {
+        console.log(`AIDev: Provider became available on attempt ${String(attempt)}`);
+        return;
+      }
+    }
+    
+    console.warn(`AIDev: Provider still not available after ${String(maxRetries)} retries`);
   }
 
   /**
@@ -58,23 +106,60 @@ export class ProviderManager implements vscode.Disposable {
     const targetId = SOURCE_TO_PROVIDER_ID[providerSource] ?? 'vscode-lm';
     const target = this.providers.get(targetId);
 
-    if (target && (await target.isAvailable())) {
-      this.activeProvider = target;
-      console.log(`AIDev: Active model provider: ${target.name}`);
-      return;
+    console.log(`AIDev: Attempting to activate provider: ${targetId}`);
+
+    if (target) {
+      try {
+        const isAvailable = await target.isAvailable();
+        console.log(`AIDev: Provider ${targetId} availability: ${String(isAvailable)}`);
+        
+        if (isAvailable) {
+          this.activeProvider = target;
+          console.log(`AIDev: Active model provider: ${target.name}`);
+          return;
+        } else {
+          console.log(`AIDev: Provider ${targetId} is not available`);
+        }
+      } catch (error) {
+        console.error(`AIDev: Error checking availability of ${targetId}:`, error);
+      }
+    } else {
+      console.warn(`AIDev: Provider ${targetId} not found in registry`);
     }
 
     // Fallback: try other providers
+    console.log('AIDev: Trying fallback providers...');
     for (const [id, provider] of this.providers) {
-      if (id !== targetId && (await provider.isAvailable())) {
-        this.activeProvider = provider;
-        console.log(`AIDev: Fell back to model provider: ${provider.name}`);
-        return;
+      if (id !== targetId) {
+        try {
+          const isAvailable = await provider.isAvailable();
+          console.log(`AIDev: Fallback provider ${id} availability: ${String(isAvailable)}`);
+          
+          if (isAvailable) {
+            this.activeProvider = provider;
+            console.log(`AIDev: Fell back to model provider: ${provider.name}`);
+            return;
+          }
+        } catch (error) {
+          console.error(`AIDev: Error checking fallback provider ${id}:`, error);
+        }
       }
     }
 
     this.activeProvider = undefined;
-    console.warn('AIDev: No model provider available.');
+    
+    // Check if we're in Cursor and provide helpful guidance
+    const isCursor = vscode.env.appName.toLowerCase().includes('cursor');
+    if (isCursor) {
+      console.warn(
+        'AIDev: No model provider available. ' +
+        'Cursor IDE does not expose models via vscode.lm API. ' +
+        'Please configure direct API keys: set aidev.providerSource to "direct" ' +
+        'and configure aidev.directApi.provider and aidev.directApi.apiKey in settings.',
+      );
+    } else {
+      console.warn('AIDev: No model provider available. Tools requiring models will not work.');
+    }
   }
 
   /** Get the currently active provider. Undefined if none available. */

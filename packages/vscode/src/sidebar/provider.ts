@@ -1,4 +1,5 @@
 import * as vscode from 'vscode';
+import { join } from 'node:path';
 import { TOOL_REGISTRY } from '@aidev/core';
 import type { ToolRegistryEntry, ScanResult, Finding, Severity, ToolId } from '@aidev/core';
 import type { ToolRunner } from '../tools/runner.js';
@@ -160,11 +161,33 @@ class FindingItem extends vscode.TreeItem {
 
     // Jump-to-source on click
     if (finding.location.filePath && finding.location.startLine > 0) {
+      // Resolve file path: if relative, resolve against workspace root
+      const workspaceFolders = vscode.workspace.workspaceFolders;
+      let fileUri: vscode.Uri;
+      
+      if (workspaceFolders && workspaceFolders.length > 0) {
+        const workspaceRoot = workspaceFolders[0].uri.fsPath;
+        // Check if path is already absolute
+        const isAbsolute = finding.location.filePath.startsWith('/') || 
+          (process.platform === 'win32' && /^[A-Za-z]:/.test(finding.location.filePath));
+        
+        if (isAbsolute) {
+          fileUri = vscode.Uri.file(finding.location.filePath);
+        } else {
+          // Resolve relative path against workspace root
+          const absolutePath = join(workspaceRoot, finding.location.filePath);
+          fileUri = vscode.Uri.file(absolutePath);
+        }
+      } else {
+        // Fallback: assume absolute path
+        fileUri = vscode.Uri.file(finding.location.filePath);
+      }
+
       this.command = {
         command: 'vscode.open',
         title: 'Jump to source',
         arguments: [
-          vscode.Uri.file(finding.location.filePath),
+          fileUri,
           {
             selection: new vscode.Range(
               finding.location.startLine - 1,

@@ -74,7 +74,21 @@ export {
 export { resolveTier, resolveModelId } from './models/tiers.js';
 
 // ─── Tools ──────────────────────────────────────────────────────────────────
-export { TOOL_REGISTRY, getToolEntry, getToolByCommand, getAutonomousTools, getToolDefinitions, BaseTool } from './tools/index.js';
+export {
+  TOOL_REGISTRY,
+  getToolEntry,
+  getToolByCommand,
+  getAutonomousTools,
+  getToolDefinitions,
+  BaseTool,
+  DeadCodeTool,
+  LintTool,
+  CommitTool,
+  CommentsTool,
+  TldrTool,
+  BranchDiffTool,
+  DiffResolveTool,
+} from './tools/index.js';
 export type { ToolRegistryEntry } from './tools/index.js';
 
 // ─── Agent ───────────────────────────────────────────────────────────────────

@@ -1,13 +1,15 @@
 import * as vscode from 'vscode';
 import type { ScanResult, ScanOptions, ToolId } from '@aidev/core';
-import { getToolEntry } from '@aidev/core';
-import { DeadCodeTool } from '@aidev/core/dist/tools/dead-code/index.js';
-import { LintTool } from '@aidev/core/dist/tools/lint/index.js';
-import { CommitTool } from '@aidev/core/dist/tools/commit/index.js';
-import { CommentsTool } from '@aidev/core/dist/tools/comments/index.js';
-import { TldrTool } from '@aidev/core/dist/tools/tldr/index.js';
-import { BranchDiffTool } from '@aidev/core/dist/tools/branch-diff/index.js';
-import { DiffResolveTool } from '@aidev/core/dist/tools/diff-resolve/index.js';
+import {
+  getToolEntry,
+  DeadCodeTool,
+  LintTool,
+  CommitTool,
+  CommentsTool,
+  TldrTool,
+  BranchDiffTool,
+  DiffResolveTool,
+} from '@aidev/core';
 import type { SettingsManager } from '../settings/index.js';
 import type { ProviderManager } from '../providers/index.js';
 
@@ -45,19 +47,47 @@ export class ToolRunner implements vscode.Disposable {
    * Shows progress in the status bar and notifies on completion.
    */
   async run(toolId: ToolId, options?: Partial<ScanOptions>): Promise<ScanResult | undefined> {
+    console.log(`AIDev: Running tool: ${toolId}`);
+    
     const entry = getToolEntry(toolId);
     if (!entry) {
-      void vscode.window.showErrorMessage(`AIDev: Unknown tool "${toolId}".`);
+      const errorMsg = `AIDev: Unknown tool "${toolId}". Check TOOL_REGISTRY for valid tool IDs.`;
+      console.error(errorMsg);
+      void vscode.window.showErrorMessage(errorMsg);
       return undefined;
     }
 
     const cwd = this.getWorkspacePath();
     if (!cwd) {
-      void vscode.window.showErrorMessage('AIDev: No workspace folder open.');
+      const errorMsg = 'AIDev: No workspace folder open. Open a workspace folder to use AIDev tools.';
+      console.error(errorMsg);
+      void vscode.window.showErrorMessage(errorMsg);
       return undefined;
     }
 
-    const provider = this.providers.getActiveProvider();
+    console.log(`AIDev: Workspace path: ${cwd}`);
+
+    let provider = this.providers.getActiveProvider();
+    console.log(`AIDev: Active provider: ${provider ? provider.name : 'none'}`);
+    
+    // If no provider but tool requires one, try to reactivate with retries
+    if (!provider && this.toolRequiresProvider(toolId)) {
+      console.log(`AIDev: Tool ${toolId} requires provider, but none available. Retrying activation with delays...`);
+      // Attempt to reactivate providers in case they became available
+      // (e.g., IDE models loading after extension activation)
+      // Use more retries and longer delays for tool execution
+      try {
+        await this.providers.retryActivation(5, 1500);
+        provider = this.providers.getActiveProvider();
+        if (provider) {
+          console.log(`AIDev: Provider became available after retry: ${provider.name}`);
+        } else {
+          console.warn(`AIDev: Provider still not available after retry. Models may not be configured.`);
+        }
+      } catch (error) {
+        console.error('AIDev: Error during provider retry:', error);
+      }
+    }
 
     // Execute with progress
     const result = await vscode.window.withProgress(
@@ -71,7 +101,21 @@ export class ToolRunner implements vscode.Disposable {
 
         const tool = this.createTool(toolId, cwd, provider);
         if (!tool) {
-          throw new Error(`Failed to create tool: ${toolId}`);
+          // Return a failed result instead of throwing
+          // createTool already showed an error message to the user
+          return {
+            toolId,
+            status: 'failed',
+            startedAt: new Date(),
+            completedAt: new Date(),
+            findings: [],
+            summary: {
+              totalFindings: 0,
+              bySeverity: { error: 0, warning: 0, info: 0, hint: 0 },
+            },
+            error: `Tool "${toolId}" could not be created. Check error messages above for details.`,
+            filesScanned: 0,
+          };
         }
 
         // Wire cancellation
@@ -84,7 +128,16 @@ export class ToolRunner implements vscode.Disposable {
         };
 
         progress.report({ message: 'Analyzing...' });
-        return tool.execute(scanOptions);
+        
+        console.log(`AIDev: Executing ${toolId}...`);
+        const executeResult = await tool.execute(scanOptions);
+        console.log(`AIDev: ${toolId} execution completed with status: ${executeResult.status}`);
+        
+        if (executeResult.status === 'failed' && executeResult.error) {
+          console.error(`AIDev: ${toolId} execution failed:`, executeResult.error);
+        }
+        
+        return executeResult;
       },
     );
 
@@ -95,6 +148,7 @@ export class ToolRunner implements vscode.Disposable {
     // Notify user
     this.notifyResult(entry.name, result);
 
+    console.log(`AIDev: Tool ${toolId} run complete. Status: ${result.status}, Findings: ${result.findings.length}`);
     return result;
   }
 
@@ -126,91 +180,162 @@ export class ToolRunner implements vscode.Disposable {
   ): import('@aidev/core').ITool | undefined {
     const current = this.settings.current;
 
+    // Helper to create consistent error messages for missing providers
+    const getProviderErrorMsg = (toolName: string): string => {
+      const isCursor = vscode.env.appName.toLowerCase().includes('cursor');
+      const baseMsg = `AIDev: ${toolName} requires a model provider. No provider is currently available.`;
+      
+      if (isCursor) {
+        return (
+          baseMsg +
+          ' Cursor IDE does not expose models via vscode.lm API. ' +
+          'Please configure direct API keys: set aidev.providerSource to "direct" ' +
+          'and configure aidev.directApi.provider and aidev.directApi.apiKey in settings.'
+        );
+      }
+      
+      return (
+        baseMsg +
+        ' Check AIDev settings (aidev.providerSource) and ensure your IDE has models configured or API keys are set.'
+      );
+    };
+
+    // Helper to safely create a tool with error handling
+    const createToolSafely = <T extends import('@aidev/core').ITool>(
+      ToolClass: new () => T,
+      toolName: string,
+      setDepsFn: (tool: T) => void,
+    ): T | undefined => {
+      try {
+        const tool = new ToolClass();
+        setDepsFn(tool);
+        console.log(`AIDev: ${toolName} created successfully`);
+        return tool;
+      } catch (error) {
+        const errorMsg = `AIDev: Failed to create ${toolName}: ${error instanceof Error ? error.message : String(error)}`;
+        console.error(errorMsg, error);
+        void vscode.window.showErrorMessage(errorMsg);
+        return undefined;
+      }
+    };
+
     switch (toolId) {
       case 'dead-code': {
-        const tool = new DeadCodeTool();
-        tool.setDeps({
-          modelProvider: provider,
-          cwd,
-          enabledLanguages: current.enabledLanguages,
-        });
-        return tool;
+        return createToolSafely(
+          DeadCodeTool,
+          'DeadCodeTool',
+          (tool) => {
+            tool.setDeps({
+              modelProvider: provider,
+              cwd,
+              enabledLanguages: current.enabledLanguages,
+            });
+          },
+        );
       }
       case 'lint': {
-        const tool = new LintTool();
-        tool.setDeps({
-          modelProvider: provider,
-          cwd,
-          enabledLanguages: current.enabledLanguages,
-        });
-        return tool;
+        return createToolSafely(
+          LintTool,
+          'LintTool',
+          (tool) => {
+            tool.setDeps({
+              modelProvider: provider,
+              cwd,
+              enabledLanguages: current.enabledLanguages,
+            });
+          },
+        );
       }
       case 'commit': {
         if (!provider) {
-          void vscode.window.showErrorMessage(
-            'AIDev: No model provider available. Configure one in settings.',
-          );
+          const errorMsg = getProviderErrorMsg('Auto-Commit');
+          console.error(errorMsg);
+          void vscode.window.showErrorMessage(errorMsg);
           return undefined;
         }
-        const tool = new CommitTool();
-        tool.setDeps({
-          modelProvider: provider,
-          commitConstraints: current.commitConstraints,
-          preCommitDryRun: current.preCommitDryRun,
-          cwd,
-        });
-        return tool;
+        return createToolSafely(
+          CommitTool,
+          'CommitTool',
+          (tool) => {
+            tool.setDeps({
+              modelProvider: provider!,
+              commitConstraints: current.commitConstraints,
+              preCommitDryRun: current.preCommitDryRun,
+              cwd,
+            });
+          },
+        );
       }
       case 'comments': {
         if (!provider) {
-          void vscode.window.showErrorMessage(
-            'AIDev: No model provider available. Configure one in settings.',
-          );
+          const errorMsg = getProviderErrorMsg('Comment Pruning');
+          console.error(errorMsg);
+          void vscode.window.showErrorMessage(errorMsg);
           return undefined;
         }
-        const tool = new CommentsTool();
-        tool.setDeps({
-          modelProvider: provider,
-          cwd,
-          enabledLanguages: current.enabledLanguages,
-        });
-        return tool;
+        return createToolSafely(
+          CommentsTool,
+          'CommentsTool',
+          (tool) => {
+            tool.setDeps({
+              modelProvider: provider!,
+              cwd,
+              enabledLanguages: current.enabledLanguages,
+            });
+          },
+        );
       }
       case 'tldr': {
         if (!provider) {
-          void vscode.window.showErrorMessage(
-            'AIDev: No model provider available. Configure one in settings.',
-          );
+          const errorMsg = getProviderErrorMsg('TLDR');
+          console.error(errorMsg);
+          void vscode.window.showErrorMessage(errorMsg);
           return undefined;
         }
-        const tool = new TldrTool();
-        tool.setDeps({
-          modelProvider: provider,
-          cwd,
-        });
-        return tool;
+        return createToolSafely(
+          TldrTool,
+          'TldrTool',
+          (tool) => {
+            tool.setDeps({
+              modelProvider: provider!,
+              cwd,
+            });
+          },
+        );
       }
       case 'branch-diff': {
-        const tool = new BranchDiffTool();
-        tool.setDeps({ cwd });
-        return tool;
+        return createToolSafely(
+          BranchDiffTool,
+          'BranchDiffTool',
+          (tool) => {
+            tool.setDeps({ cwd });
+          },
+        );
       }
       case 'diff-resolve': {
         if (!provider) {
-          void vscode.window.showErrorMessage(
-            'AIDev: No model provider available. Configure one in settings.',
-          );
+          const errorMsg = getProviderErrorMsg('Diff Resolver');
+          console.error(errorMsg);
+          void vscode.window.showErrorMessage(errorMsg);
           return undefined;
         }
-        const tool = new DiffResolveTool();
-        tool.setDeps({
-          modelProvider: provider,
-          cwd,
-        });
-        return tool;
+        return createToolSafely(
+          DiffResolveTool,
+          'DiffResolveTool',
+          (tool) => {
+            tool.setDeps({
+              modelProvider: provider!,
+              cwd,
+            });
+          },
+        );
       }
-      default:
+      default: {
+        const errorMsg = `AIDev: Unknown tool ID: ${toolId}`;
+        console.error(errorMsg);
+        void vscode.window.showErrorMessage(errorMsg);
         return undefined;
+      }
     }
   }
 
@@ -219,29 +344,42 @@ export class ToolRunner implements vscode.Disposable {
     return folders && folders.length > 0 ? folders[0].uri.fsPath : undefined;
   }
 
+  /**
+   * Check if a tool requires a model provider to function.
+   */
+  private toolRequiresProvider(toolId: ToolId): boolean {
+    // Tools that require a model provider
+    return ['tldr', 'comments', 'commit', 'diff-resolve'].includes(toolId);
+  }
+
   private notifyResult(toolName: string, result: ScanResult): void {
     const { status, summary } = result;
 
     switch (status) {
       case 'completed':
         if (summary.totalFindings > 0) {
-          void vscode.window.showInformationMessage(
-            `AIDev: ${toolName} found ${String(summary.totalFindings)} items. Check the sidebar for details.`,
-          );
+          const message = `AIDev: ${toolName} found ${String(summary.totalFindings)} items. Check the sidebar for details.`;
+          console.log(message);
+          void vscode.window.showInformationMessage(message);
         } else {
-          void vscode.window.showInformationMessage(
-            `AIDev: ${toolName} completed — no findings.`,
-          );
+          const message = `AIDev: ${toolName} completed — no findings.`;
+          console.log(message);
+          void vscode.window.showInformationMessage(message);
         }
         break;
-      case 'failed':
-        void vscode.window.showErrorMessage(
-          `AIDev: ${toolName} failed: ${result.error ?? 'Unknown error'}`,
-        );
+      case 'failed': {
+        const errorMsg = result.error ?? 'Unknown error';
+        const message = `AIDev: ${toolName} failed: ${errorMsg}`;
+        console.error(message);
+        void vscode.window.showErrorMessage(message);
         break;
-      case 'cancelled':
-        void vscode.window.showInformationMessage(`AIDev: ${toolName} cancelled.`);
+      }
+      case 'cancelled': {
+        const message = `AIDev: ${toolName} cancelled.`;
+        console.log(message);
+        void vscode.window.showInformationMessage(message);
         break;
+      }
     }
   }
 }

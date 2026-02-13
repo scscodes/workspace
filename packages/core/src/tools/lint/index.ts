@@ -125,15 +125,8 @@ export class LintTool extends BaseTool {
 
       const available = await isLinterAvailable(repoRoot, linter);
       if (!available) {
-        findings.push(
-          this.createFinding({
-            title: `${linter.name} not found`,
-            description: `${linter.name} is not installed. Install it to get static analysis results.`,
-            location: { filePath: repoRoot, startLine: 0, endLine: 0 },
-            severity: 'hint',
-            metadata: { source: 'linter-check', linter: linter.name },
-          }),
-        );
+        // Silently skip missing linters - don't create noisy findings
+        // Users can install linters if they want static analysis
         continue;
       }
 

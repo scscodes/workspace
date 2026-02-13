@@ -148,8 +148,10 @@ StopReason        'end_turn' | 'tool_use' | 'max_tokens'
 
 | ID | Class | Location | Description |
 |----|-------|----------|-------------|
-| `vscode-lm` | `VscodeLmProvider` | `packages/vscode/src/providers/vscode-lm.ts` | Uses `vscode.lm` API — Copilot / Cursor models |
-| `direct-api` | `DirectApiProvider` | `packages/vscode/src/providers/direct-api.ts` | Direct API keys — Anthropic / OpenAI |
+| `vscode-lm` | `VscodeLmProvider` | `packages/vscode/src/providers/vscode-lm.ts` | Uses `vscode.lm` API — **GitHub Copilot in VSCode only** (Cursor does not expose models via this API) |
+| `direct-api` | `DirectApiProvider` | `packages/vscode/src/providers/direct-api.ts` | Direct API keys — Anthropic / OpenAI (required for Cursor users) |
+
+**Cursor and MCP**: Cursor does not expose models via `vscode.lm`. A future option is to use the Model Context Protocol (MCP): run an MCP server that exposes AIDev tools and, if Cursor supports it, uses *sampling* to request LLM completions from the host (user’s model, including Auto). See [CURSOR_MCP_STRATEGY.md](./CURSOR_MCP_STRATEGY.md) for strategy options and references.
 
 ### Provider Selection
 

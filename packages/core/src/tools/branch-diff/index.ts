@@ -15,6 +15,7 @@ import {
   getRemoteDiffSummary,
   getRemoteLog,
 } from '../../git/branch.js';
+import { getLog } from '../../git/log.js';
 
 // ─── Constants ──────────────────────────────────────────────────────────────
 
@@ -186,10 +187,32 @@ export class BranchDiffTool extends BaseTool {
       statusParts.push('up to date');
     }
 
+    // Build more informative description
+    let description = `Branch is ${statusParts.join(', ')} with remote.`;
+    
+    // Add context when up to date - show recent commits for context
+    if (aheadBehind.ahead === 0 && aheadBehind.behind === 0) {
+      // Get the most recent commit on this branch for context
+      try {
+        const recentCommits = await getLog({
+          cwd: repoRoot,
+          maxCount: 1,
+          includeFiles: false,
+        });
+        if (recentCommits.length > 0) {
+          const lastCommit = recentCommits[0];
+          const dateStr = lastCommit.timestamp.toLocaleDateString();
+          description += ` Last commit: "${lastCommit.subject}" (${dateStr}).`;
+        }
+      } catch {
+        // Ignore errors getting log - not critical
+      }
+    }
+
     findings.push(
       this.createFinding({
         title: `${localBranch} vs ${trackingBranch}`,
-        description: `Branch is ${statusParts.join(', ')} remote.`,
+        description,
         location: { filePath: repoRoot, startLine: 0, endLine: 0 },
         severity: 'info',
         metadata: {

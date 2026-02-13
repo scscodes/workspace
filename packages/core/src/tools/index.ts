@@ -3,6 +3,15 @@ import type { ToolId, ToolInvocationMode, ToolDefinition } from '../types/index.
 // Re-export the base class for tool implementations
 export { BaseTool } from './base-tool.js';
 
+// Export tool classes for VSCode extension to instantiate
+export { DeadCodeTool } from './dead-code/index.js';
+export { LintTool } from './lint/index.js';
+export { CommitTool } from './commit/index.js';
+export { CommentsTool } from './comments/index.js';
+export { TldrTool } from './tldr/index.js';
+export { BranchDiffTool } from './branch-diff/index.js';
+export { DiffResolveTool } from './diff-resolve/index.js';
+
 /**
  * Metadata for a registered tool.
  * Used by chat participant routing, sidebar display, and command registration.

@@ -51,10 +51,10 @@
           "type": "string",
           "enum": ["ide", "direct"],
           "default": "ide",
-          "description": "Model provider source. 'ide' uses your IDE's built-in models (Copilot/Cursor). 'direct' uses your own API keys.",
+          "description": "Model provider source. 'ide' uses GitHub Copilot in VSCode (vscode.lm API). 'direct' uses your own API keys (required for Cursor IDE).",
           "enumDescriptions": [
-            "Use models provided by your IDE (GitHub Copilot, Cursor built-in).",
-            "Use direct API keys (Anthropic, OpenAI)."
+            "Use GitHub Copilot models via vscode.lm API (VSCode only - Cursor does not support this).",
+            "Use direct API keys (Anthropic, OpenAI) - required for Cursor IDE users."
           ]
         },
         "aidev.directApi.provider": {
