@@ -355,29 +355,44 @@ packages/core/src/
 │   ├── index.ts                Models barrel
 │   └── tiers.ts                resolveTier, resolveModelId
 ├── tools/
-│   ├── index.ts                TOOL_REGISTRY, getToolEntry, getToolByCommand
-│   ├── dead-code/index.ts      DeadCodeTool (stub)
-│   ├── lint/index.ts           LintTool (stub)
-│   ├── comments/index.ts       CommentsTool (stub)
-│   ├── commit/index.ts         CommitTool (stub)
-│   └── tldr/index.ts           TldrTool (stub)
+│   ├── index.ts                TOOL_REGISTRY, getToolEntry, getToolByCommand, BaseTool
+│   ├── base-tool.ts            Abstract base class (lifecycle, cancel, export)
+│   ├── dead-code/index.ts      DeadCodeTool (stub — extends BaseTool)
+│   ├── lint/index.ts           LintTool (stub — extends BaseTool)
+│   ├── comments/index.ts       CommentsTool (implemented — blame + model)
+│   ├── commit/index.ts         CommitTool (implemented — full pipeline)
+│   └── tldr/index.ts           TldrTool (implemented — git log + model)
+├── git/
+│   ├── index.ts                Git barrel export
+│   ├── executor.ts             execGit, execGitStrict, isGitRepo, getRepoRoot
+│   ├── status.ts               getChangedFiles, parsePorcelainLine
+│   ├── log.ts                  getLog, GitLogEntry, parseLogOutput
+│   ├── blame.ts                getBlame, getFileAge, BlameRange
+│   ├── staging.ts              stageFiles, autoStage, getStagedDiff, createCommit
+│   ├── hooks.ts                checkHooks, HookCheckResult
+│   └── validation.ts           validateCommitMessage
 └── utils/
     └── index.ts                generateId, emptyScanSummary, buildScanSummary
 
 packages/vscode/src/
-├── extension.ts                activate / deactivate
+├── extension.ts                activate / deactivate (settings → providers → runner → UI)
+├── settings/
+│   └── index.ts                SettingsManager (centralized config reader)
 ├── providers/
-│   ├── index.ts                ProviderManager
-│   ├── vscode-lm.ts            VscodeLmProvider
-│   └── direct-api.ts           DirectApiProvider
+│   ├── index.ts                ProviderManager (provider lifecycle + selection)
+│   ├── vscode-lm.ts            VscodeLmProvider (full sendRequest implementation)
+│   └── direct-api.ts           DirectApiProvider (Anthropic + OpenAI implementations)
+├── tools/
+│   ├── index.ts                Tools barrel
+│   └── runner.ts               ToolRunner (orchestrates tool execution)
 ├── chat/
 │   ├── index.ts                Chat barrel
-│   └── participant.ts          @aidev chat participant
+│   └── participant.ts          @aidev chat participant (routes to ToolRunner)
 ├── sidebar/
 │   ├── index.ts                Sidebar barrel
-│   └── provider.ts             ToolsTreeProvider, ResultsTreeProvider
+│   └── provider.ts             ToolsTreeProvider, ResultsTreeProvider (jump-to-source)
 ├── commands/
-│   └── index.ts                All command registrations
+│   └── index.ts                All command registrations (routes to ToolRunner)
 └── status/
     └── index.ts                Status bar mode indicator
 ```
@@ -390,22 +405,26 @@ packages/vscode/src/
 |-----------|--------|-------|
 | Monorepo scaffold | Done | npm workspaces, tsconfig, esbuild |
 | Type system | Done | All interfaces defined |
-| Settings schema | Done | Defaults, validation, normalization |
+| Settings schema | Done | Defaults, validation, normalization, 12 unit tests |
+| Settings bridge (VSCode) | Done | SettingsManager with change events, all components use it |
 | Model tier resolution | Done | resolveTier, resolveModelId |
 | Tool registry | Done | TOOL_REGISTRY with all 5 tools |
-| Extension activation | Done | Wires up all components |
-| Chat participant | Scaffold | Routes commands, stubs only |
-| Sidebar views | Scaffold | Tools list renders, results placeholder |
+| Base tool class | Done | BaseTool: lifecycle, cancellation, summary, JSON/MD export |
+| Git operations | Done | executor, status, log, blame, staging, hooks, validation |
+| Extension activation | Done | settings → providers → runner → UI |
+| ToolRunner | Done | Orchestrates execution, progress, result broadcasting |
+| Chat participant | Done | Routes to ToolRunner, extracts file references |
+| Sidebar views | Done | Tools list + Results tree with jump-to-source |
 | Status bar | Done | Mode display with real-time updates |
-| Commands | Scaffold | Registered, show placeholder messages |
-| VscodeLmProvider | Scaffold | isAvailable + listModels work, sendRequest stub |
-| DirectApiProvider | Scaffold | All methods stub |
-| DeadCodeTool | Stub | `throw new Error('not yet implemented')` |
-| LintTool | Stub | `throw new Error('not yet implemented')` |
-| CommentsTool | Stub | `throw new Error('not yet implemented')` |
-| CommitTool | Stub | `throw new Error('not yet implemented')` |
-| TldrTool | Stub | `throw new Error('not yet implemented')` |
-| Unit tests | Not started | vitest configured, no tests yet |
+| Commands | Done | All route to ToolRunner, export with format selection |
+| VscodeLmProvider | Done | Full sendRequest: tier resolution, model matching, streaming |
+| DirectApiProvider | Done | Anthropic + OpenAI API with model catalogs |
+| DeadCodeTool | Stub | Extends BaseTool, `run()` not yet implemented |
+| LintTool | Stub | Extends BaseTool, `run()` not yet implemented |
+| CommentsTool | Done | Git blame age + model-driven value assessment |
+| CommitTool | Done | Full pipeline: status → stage → model → validate → hooks |
+| TldrTool | Done | Git log → model summarization with highlights |
+| Unit tests | 32 passing | schema (12), validation (9), status parsing (11) |
 | Integration tests | Not started | @vscode/test-electron configured |
 
 ---

@@ -1,1 +1,1 @@
-export { registerSidebar } from './provider.js';
+export { registerSidebar, ResultsTreeProvider, ToolsTreeProvider } from './provider.js';
