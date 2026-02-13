@@ -1,5 +1,6 @@
 import * as vscode from 'vscode';
 import { TOOL_REGISTRY, VALID_MODES } from '@aidev/core';
+import type { SettingsManager } from '../settings/index.js';
 import type { ProviderManager } from '../providers/index.js';
 
 /**
@@ -10,6 +11,7 @@ import type { ProviderManager } from '../providers/index.js';
  */
 export function registerCommands(
   _context: vscode.ExtensionContext,
+  _settings: SettingsManager,
   _providerManager: ProviderManager,
 ): vscode.Disposable[] {
   const disposables: vscode.Disposable[] = [];
@@ -18,7 +20,7 @@ export function registerCommands(
   for (const tool of TOOL_REGISTRY) {
     disposables.push(
       vscode.commands.registerCommand(tool.commandId, () => {
-        // TODO: Route to actual tool execution via providerManager
+        // TODO: Route to actual tool execution via providerManager + settings
         void vscode.window.showInformationMessage(
           `AIDev: ${tool.name} — not yet implemented.`,
         );
@@ -46,10 +48,10 @@ export function registerCommands(
     }),
   );
 
-  // Set mode command
+  // Set mode command — uses SettingsManager for current mode display
   disposables.push(
     vscode.commands.registerCommand('aidev.setMode', async () => {
-      const current = vscode.workspace.getConfiguration('aidev').get<string>('mode', 'balanced');
+      const current = _settings.current.mode;
       const picked = await vscode.window.showQuickPick(
         VALID_MODES.map((m) => ({
           label: m,
@@ -61,7 +63,7 @@ export function registerCommands(
       if (picked && picked.label !== current) {
         const config = vscode.workspace.getConfiguration('aidev');
         await config.update('mode', picked.label, vscode.ConfigurationTarget.Global);
-        void vscode.window.showInformationMessage(`AIDev: Mode set to ${picked.label}.`);
+        // SettingsManager picks up the change automatically
       }
     }),
   );

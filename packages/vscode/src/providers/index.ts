@@ -1,80 +1,98 @@
 import * as vscode from 'vscode';
 import type { IModelProvider } from '@aidev/core';
+import type { SettingsManager } from '../settings/index.js';
 import { VscodeLmProvider } from './vscode-lm.js';
 import { DirectApiProvider } from './direct-api.js';
 
+/** Maps providerSource setting values to provider IDs */
+const SOURCE_TO_PROVIDER_ID: Record<string, string> = {
+  ide: 'vscode-lm',
+  direct: 'direct-api',
+};
+
 /**
- * Manages model provider lifecycle and selection based on settings.
+ * Manages model provider lifecycle and selection.
  *
- * Owns the provider instances and switches between them when
- * the user changes aidev.providerSource.
+ * Reads the active provider source from SettingsManager and switches
+ * providers reactively when settings change.
  */
 export class ProviderManager implements vscode.Disposable {
-  private providers = new Map<string, IModelProvider>();
+  private readonly providers = new Map<string, IModelProvider>();
   private activeProvider: IModelProvider | undefined;
+  private readonly disposables: vscode.Disposable[] = [];
+
+  constructor(private readonly settings: SettingsManager) {}
 
   /**
-   * Initialize providers and subscribe to settings changes.
+   * Register built-in providers and activate the configured one.
    */
-  async initialize(context: vscode.ExtensionContext): Promise<void> {
-    // Register built-in providers
+  async initialize(): Promise<void> {
+    // Register providers
     const vscodeLm = new VscodeLmProvider();
     this.providers.set(vscodeLm.id, vscodeLm);
 
     const directApi = new DirectApiProvider();
     this.providers.set(directApi.id, directApi);
 
-    // Set active provider from current settings
-    await this.refreshFromSettings();
+    // Activate from current settings
+    await this.activateFromSettings();
 
-    // React to settings changes — supports in-flight mode switching
-    context.subscriptions.push(
-      vscode.workspace.onDidChangeConfiguration((e) => {
-        if (e.affectsConfiguration('aidev')) {
-          void this.refreshFromSettings();
+    // React to settings changes — supports in-flight provider switching
+    this.disposables.push(
+      this.settings.onDidChange(async (e) => {
+        if (e.previous.providerSource !== e.current.providerSource) {
+          await this.activateFromSettings();
         }
       }),
     );
   }
 
   /**
-   * Read current settings and activate the appropriate provider.
+   * Select and activate the provider matching current settings.
+   * Falls back to any available provider if the primary isn't available.
    */
-  async refreshFromSettings(): Promise<void> {
-    const config = vscode.workspace.getConfiguration('aidev');
-    const source = config.get<string>('providerSource', 'ide');
-    const providerId = source === 'direct' ? 'direct-api' : 'vscode-lm';
-    const provider = this.providers.get(providerId);
+  private async activateFromSettings(): Promise<void> {
+    const { providerSource } = this.settings.current;
+    const targetId = SOURCE_TO_PROVIDER_ID[providerSource] ?? 'vscode-lm';
+    const target = this.providers.get(targetId);
 
-    if (provider && (await provider.isAvailable())) {
-      this.activeProvider = provider;
-    } else {
-      // Fallback: try the other provider
-      for (const [id, p] of this.providers) {
-        if (id !== providerId && (await p.isAvailable())) {
-          this.activeProvider = p;
-          break;
-        }
+    if (target && (await target.isAvailable())) {
+      this.activeProvider = target;
+      console.log(`AIDev: Active model provider: ${target.name}`);
+      return;
+    }
+
+    // Fallback: try other providers
+    for (const [id, provider] of this.providers) {
+      if (id !== targetId && (await provider.isAvailable())) {
+        this.activeProvider = provider;
+        console.log(`AIDev: Fell back to model provider: ${provider.name}`);
+        return;
       }
     }
+
+    this.activeProvider = undefined;
+    console.warn('AIDev: No model provider available.');
   }
 
-  /**
-   * Get the currently active model provider. May be undefined if
-   * no provider is available/configured.
-   */
+  /** Get the currently active provider. Undefined if none available. */
   getActiveProvider(): IModelProvider | undefined {
     return this.activeProvider;
   }
 
-  /**
-   * Get a specific provider by ID.
-   */
+  /** Get a specific provider by ID. */
   getProvider(id: string): IModelProvider | undefined {
     return this.providers.get(id);
   }
 
+  /** Get the current settings manager (for tools that need settings). */
+  getSettings(): SettingsManager {
+    return this.settings;
+  }
+
   dispose(): void {
+    for (const d of this.disposables) d.dispose();
+    this.disposables.length = 0;
     for (const provider of this.providers.values()) {
       provider.dispose();
     }

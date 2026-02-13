@@ -66,5 +66,45 @@ export { resolveTier, resolveModelId } from './models/tiers.js';
 export { TOOL_REGISTRY, getToolEntry, getToolByCommand } from './tools/index.js';
 export type { ToolRegistryEntry } from './tools/index.js';
 
+// ─── Git Operations ─────────────────────────────────────────────────────────
+export {
+  // Executor
+  execGit,
+  execGitStrict,
+  isGitRepo,
+  getRepoRoot,
+  // Status
+  getChangedFiles,
+  getStagedFiles,
+  getUnstagedFiles,
+  // Log
+  getLog,
+  getCommitCount,
+  // Blame
+  getBlame,
+  getFileAge,
+  // Staging & Commit
+  stageFiles,
+  stageAll,
+  unstageFiles,
+  createCommit,
+  getDiffSummary,
+  getStagedDiff,
+  autoStage,
+  // Hooks
+  checkHooks,
+  // Validation
+  validateCommitMessage,
+} from './git/index.js';
+
+export type {
+  GitExecOptions,
+  GitExecResult,
+  GitLogEntry,
+  GitLogOptions,
+  BlameRange,
+  BlameOptions,
+} from './git/index.js';
+
 // ─── Utils ──────────────────────────────────────────────────────────────────
 export { generateId, emptyScanSummary, buildScanSummary } from './utils/index.js';
