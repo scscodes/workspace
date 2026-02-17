@@ -21,11 +21,11 @@ import {
 import { validateCommitMessage } from '../../git/validation.js';
 import { checkHooks } from '../../git/hooks.js';
 import { getRepoRoot } from '../../git/executor.js';
+import { TOOL_MAX_DIFF_LINES } from '../../settings/defaults.js';
 
 // ─── Constants ──────────────────────────────────────────────────────────────
 
-/** Max diff lines to include in the model prompt */
-const MAX_DIFF_LINES = 500;
+const MAX_DIFF_LINES = TOOL_MAX_DIFF_LINES;
 
 /** Max stat output length for the model prompt */
 const MAX_STAT_LENGTH = 3000;
@@ -142,13 +142,23 @@ export class CommitTool extends BaseTool {
     const diff = await getStagedDiff(repoRoot, MAX_DIFF_LINES);
     const prompt = buildCommitPrompt(changedFiles, diffStat, diff, commitConstraints);
 
-    const response = await modelProvider.sendRequest({
-      role: 'tool',
-      messages: [
-        { role: 'system', content: SYSTEM_PROMPT },
-        { role: 'user', content: prompt },
-      ],
-    });
+    const response = await this.sendRequestWithTimeout(
+      async (timeoutSignal) => {
+        // Merge user signal with timeout signal
+        const mergedSignal = options.signal
+          ? AbortSignal.any([options.signal, timeoutSignal])
+          : timeoutSignal;
+          
+        return modelProvider.sendRequest({
+          role: 'tool',
+          messages: [
+            { role: 'system', content: SYSTEM_PROMPT },
+            { role: 'user', content: prompt },
+          ],
+          signal: mergedSignal,
+        });
+      },
+    );
 
     const commitMessage = response.content.trim();
 

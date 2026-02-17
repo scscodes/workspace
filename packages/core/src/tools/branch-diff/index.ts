@@ -16,11 +16,11 @@ import {
   getRemoteLog,
 } from '../../git/branch.js';
 import { getLog } from '../../git/log.js';
+import { TOOL_MAX_DIFF_LINES } from '../../settings/defaults.js';
 
 // ─── Constants ──────────────────────────────────────────────────────────────
 
-/** Max diff lines to include in the result */
-const MAX_DIFF_LINES = 500;
+const MAX_DIFF_LINES = TOOL_MAX_DIFF_LINES;
 
 /** Default: fetch before comparing */
 const DEFAULT_FETCH = true;

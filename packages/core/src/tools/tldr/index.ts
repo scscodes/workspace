@@ -10,14 +10,15 @@ import { BaseTool } from '../base-tool.js';
 import { getLog } from '../../git/log.js';
 import type { GitLogEntry } from '../../git/log.js';
 import { getRepoRoot } from '../../git/executor.js';
+import {
+  TOOL_MAX_COMMITS_FOR_PROMPT,
+  TOOL_DEFAULT_SINCE_DAYS,
+} from '../../settings/defaults.js';
 
 // ─── Constants ──────────────────────────────────────────────────────────────
 
-/** Default: summarize last 2 weeks of changes */
-const DEFAULT_SINCE_DAYS = 14;
-
-/** Max commits to feed to the model */
-const MAX_COMMITS_FOR_PROMPT = 100;
+const DEFAULT_SINCE_DAYS = TOOL_DEFAULT_SINCE_DAYS;
+const MAX_COMMITS_FOR_PROMPT = TOOL_MAX_COMMITS_FOR_PROMPT;
 
 /** ms per day */
 const MS_PER_DAY = 86_400_000;
@@ -74,7 +75,7 @@ export class TldrTool extends BaseTool {
 
     // Phase 1: Fetch git log
     this.throwIfCancelled(options);
-    const entries = await getLog({
+    let entries = await getLog({
       cwd: repoRoot,
       since,
       maxCount: MAX_COMMITS_FOR_PROMPT,
@@ -82,16 +83,29 @@ export class TldrTool extends BaseTool {
       includeFiles: true,
     });
 
+    // If no recent commits, fall back to the last commit (regardless of date)
     if (entries.length === 0) {
-      findings.push(
-        this.createFinding({
-          title: 'No recent changes',
-          description: `No commits found for "${scope}" in the last ${String(DEFAULT_SINCE_DAYS)} days.`,
-          location: { filePath: repoRoot, startLine: 0, endLine: 0 },
-          severity: 'info',
-        }),
-      );
-      return findings;
+      const allEntries = await getLog({
+        cwd: repoRoot,
+        maxCount: 1,
+        paths: options.paths,
+        includeFiles: true,
+      });
+      
+      if (allEntries.length === 0) {
+        findings.push(
+          this.createFinding({
+            title: 'No commits found',
+            description: `No git history found for "${scope}".`,
+            location: { filePath: repoRoot, startLine: 0, endLine: 0 },
+            severity: 'info',
+          }),
+        );
+        return findings;
+      }
+      
+      // Use the last commit even if it's older than the default time window
+      entries = allEntries;
     }
 
     // Phase 2: Build prompt and call model
@@ -100,22 +114,26 @@ export class TldrTool extends BaseTool {
 
     let response;
     try {
-      response = await modelProvider.sendRequest({
-        role: 'chat',
-        messages: [
-          { role: 'system', content: SYSTEM_PROMPT },
-          { role: 'user', content: prompt },
-        ],
-        signal: options.signal,
-      });
+      response = await this.sendRequestWithTimeout(
+        async (timeoutSignal) => {
+          // Merge user signal with timeout signal
+          const mergedSignal = options.signal
+            ? AbortSignal.any([options.signal, timeoutSignal])
+            : timeoutSignal;
+            
+          return modelProvider.sendRequest({
+            role: 'chat',
+            messages: [
+              { role: 'system', content: SYSTEM_PROMPT },
+              { role: 'user', content: prompt },
+            ],
+            signal: mergedSignal,
+          });
+        },
+      );
     } catch (error) {
       findings.push(
-        this.createFinding({
-          title: 'TLDR failed',
-          description: `Failed to generate summary: ${error instanceof Error ? error.message : String(error)}`,
-          location: { filePath: repoRoot, startLine: 0, endLine: 0 },
-          severity: 'error',
-        }),
+        this.createErrorFinding(repoRoot, error, 'TLDR generation'),
       );
       return findings;
     }

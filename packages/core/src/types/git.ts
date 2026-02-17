@@ -134,4 +134,6 @@ export interface ConflictResolution {
   strategy: 'ours' | 'theirs' | 'merged' | 'model';
   /** Confidence level of the resolution */
   confidence: 'high' | 'medium' | 'low';
+  /** Optional error message if resolution failed */
+  error?: string;
 }

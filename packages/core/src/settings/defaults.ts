@@ -43,6 +43,35 @@ export const DEFAULT_AGENT_SETTINGS: AgentSettings = {
   systemPrompt: '',
 };
 
+// ─── Tool Limits ──────────────────────────────────────────────────────────────
+
+/** Maximum file content length to send to model (characters) */
+export const TOOL_MAX_FILE_CONTENT_LENGTH = 10_000;
+
+/** Maximum files to analyze per tool run (safety bound) */
+export const TOOL_MAX_FILES_PER_RUN = 200;
+
+/** Maximum diff lines to include in prompts/results */
+export const TOOL_MAX_DIFF_LINES = 500;
+
+/** Maximum context lines around conflicts for model prompts */
+export const TOOL_MAX_CONTEXT_LINES = 50;
+
+/** Maximum commits to include in TLDR prompt */
+export const TOOL_MAX_COMMITS_FOR_PROMPT = 100;
+
+/** Comments older than this (in days) are flagged as stale */
+export const TOOL_STALE_COMMENT_THRESHOLD_DAYS = 180;
+
+/** Default days to look back for TLDR summaries */
+export const TOOL_DEFAULT_SINCE_DAYS = 14;
+
+/** Batch size for parallel file processing */
+export const TOOL_MODEL_BATCH_SIZE = 5;
+
+/** Timeout for model requests (milliseconds) */
+export const TOOL_MODEL_TIMEOUT_MS = 30_000;
+
 // ─── Root Settings ──────────────────────────────────────────────────────────
 
 /**

@@ -1,6 +1,6 @@
 # AIDev — Project Specification
 
-> **Status**: Git tooling expanded — branch diff, conflict resolution, enhanced auto-commit.
+> **Status**: UI/UX improvements — inline commands, auto-discovery, error handling, timeouts, parallel processing.
 > **Last updated**: 2026-02-13
 
 This is the single source of truth for the AIDev extension. All architectural decisions, constraints, and conventions are recorded here. When in doubt, defer to this document.
@@ -387,7 +387,13 @@ packages/core/src/agent/
   - **General**: TLDR
   - **Hygiene**: Dead Code, Lint & Best Practice, Comment Pruning
   - **SCM**: Branch Diff, Diff Resolver, Auto-Commit
-- Each category is expandable; each tool is clickable (runs the tool). Results (findings or summary) appear as children under the tool. Jump-to-source for findings.
+- Each category is expandable with inline badge showing total findings count
+- Each tool shows inline status (✓ clean, n findings, or Failed) and a right-aligned "Run" button
+- Clicking the tool name expands/collapses (does not run the tool)
+- Clicking the "Run" button executes the tool
+- When a tool is running, shows `$(sync~spin) Running...` inline spinner matching the status bar
+- Results (findings or summary) appear as children under the tool. Jump-to-source for findings.
+- Tools automatically discover project files when no paths are specified (uses `git ls-files`)
 - Registered in `packages/vscode/src/sidebar/provider.ts`
 
 ### Status Bar
@@ -414,9 +420,11 @@ All commands registered in `packages/vscode/src/commands/index.ts`:
 
 ### Notification Policy
 
-- **No modal dialogs or toast notifications that overlap chat.**
-- Use status bar icons for in-progress / loading states.
-- Use simple icons in the sidebar results view.
+- **No pop-up notifications** — all results logged to console only
+- **No modal dialogs or toast notifications** that overlap chat
+- Use status bar spinner for in-progress / loading states
+- Use inline spinner in sidebar when tools are running
+- Use simple icons in the sidebar results view
 
 ---
 
@@ -544,8 +552,13 @@ packages/vscode/src/
 | Chat participant | Done | Agentic multi-turn loop + slash command fallback |
 | Agent loop (core) | Done | Async generator state machine, system prompt builder |
 | Tool calling protocol | Done | ToolDefinition, ToolCall, ToolResult types + provider support |
-| Sidebar views | Done | Tools list + Results tree with jump-to-source |
-| Status bar | Done | Mode display with real-time updates |
+| Sidebar views | Done | Categorized tree with inline Run buttons (right-aligned), inline spinners, auto-file discovery, expand-only click behavior |
+| Status bar | Done | Mode display with real-time updates, spinner when busy |
+| File count tracking | Done | All tools report accurate filesScanned counts |
+| Constants centralization | Done | All magic numbers moved to defaults.ts |
+| Error reporting | Done | No silent failures — all errors create findings |
+| Timeout handling | Done | All model calls have 30s timeout protection |
+| Parallel processing | Done | DeadCodeTool and LintTool process files in batches |
 | Commands | Done | All route to ToolRunner, export with format selection |
 | VscodeLmProvider | Done | Tier resolution, model matching, streaming, tool message fallback |
 | DirectApiProvider | Done | Anthropic + OpenAI API with model catalogs, full tool calling |

@@ -38,6 +38,13 @@ export class ToolRunner implements vscode.Disposable {
   /** Most recent result from each tool */
   private readonly lastResults = new Map<ToolId, ScanResult>();
 
+  /** Track which tools are currently running */
+  private readonly runningTools = new Set<ToolId>();
+
+  /** Event emitter for running state changes */
+  private readonly _onDidChangeRunningState = new vscode.EventEmitter<ToolId>();
+  readonly onDidChangeRunningState: vscode.Event<ToolId> = this._onDidChangeRunningState.event;
+
   constructor(
     private readonly settings: SettingsManager,
     private readonly providers: ProviderManager,
@@ -93,12 +100,15 @@ export class ToolRunner implements vscode.Disposable {
 
     const busyMessage = toolId === 'branch-diff' ? 'Fetching...' : 'Scanning...';
     this.statusBar?.setBusy(busyMessage);
+    this.runningTools.add(toolId);
+    this._onDidChangeRunningState.fire(toolId);
 
     let result: ScanResult;
     try {
+      // Don't show notification popup - use inline spinner in sidebar instead
       result = await vscode.window.withProgress(
         {
-          location: vscode.ProgressLocation.Notification,
+          location: vscode.ProgressLocation.Window,
           title: `AIDev: ${entry.name}`,
           cancellable: true,
         },
@@ -142,6 +152,8 @@ export class ToolRunner implements vscode.Disposable {
       );
     } finally {
       this.statusBar?.clearBusy();
+      this.runningTools.delete(toolId);
+      this._onDidChangeRunningState.fire(toolId);
     }
 
     // Store and broadcast result
@@ -160,6 +172,13 @@ export class ToolRunner implements vscode.Disposable {
    */
   getLastResult(toolId: ToolId): ScanResult | undefined {
     return this.lastResults.get(toolId);
+  }
+
+  /**
+   * Check if a tool is currently running.
+   */
+  isRunning(toolId: ToolId): boolean {
+    return this.runningTools.has(toolId);
   }
 
   /**
@@ -343,19 +362,18 @@ export class ToolRunner implements vscode.Disposable {
   private notifyResult(toolName: string, result: ScanResult): void {
     const { status, summary } = result;
 
+    // Log to console only - no pop-up notifications
     switch (status) {
       case 'completed':
         if (summary.totalFindings > 0) {
-          const message = `${toolName}: ${String(summary.totalFindings)} item(s) — see sidebar`;
-          console.log(`AIDev: ${message}`);
-          void vscode.window.showInformationMessage(message);
+          console.log(`AIDev: ${toolName} completed — ${String(summary.totalFindings)} item(s) found`);
+        } else {
+          console.log(`AIDev: ${toolName} completed — no issues found`);
         }
         break;
       case 'failed': {
         const errorMsg = result.error ?? 'Unknown error';
-        const message = `AIDev: ${toolName} failed: ${errorMsg}`;
-        console.error(message);
-        void vscode.window.showErrorMessage(message);
+        console.error(`AIDev: ${toolName} failed: ${errorMsg}`);
         break;
       }
       case 'cancelled':

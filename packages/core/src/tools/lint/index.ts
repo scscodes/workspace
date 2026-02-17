@@ -9,14 +9,15 @@ import type {
 } from '../../types/index.js';
 import { BaseTool } from '../base-tool.js';
 import { execGitStrict, getRepoRoot } from '../../git/executor.js';
+import {
+  TOOL_MAX_FILE_CONTENT_LENGTH,
+  TOOL_MAX_FILES_PER_RUN,
+} from '../../settings/defaults.js';
 
 // ─── Constants ──────────────────────────────────────────────────────────────
 
-/** Max file content for model analysis */
-const MAX_FILE_CONTENT_LENGTH = 10_000;
-
-/** Max files to analyze per run */
-const MAX_FILES_PER_RUN = 100;
+const MAX_FILE_CONTENT_LENGTH = TOOL_MAX_FILE_CONTENT_LENGTH;
+const MAX_FILES_PER_RUN = TOOL_MAX_FILES_PER_RUN;
 
 /** Extension → language mapping */
 const EXT_TO_LANGUAGE: Record<string, SupportedLanguage> = {
@@ -156,26 +157,36 @@ export class LintTool extends BaseTool {
 
     // Phase 2: Model-driven analysis
     if (modelProvider) {
-      for (const filePath of files.slice(0, MAX_FILES_PER_RUN)) {
-        this.throwIfCancelled(options);
+      const filesToAnalyze = files.slice(0, MAX_FILES_PER_RUN);
 
-        try {
-          const fullPath = join(repoRoot, filePath);
-          const content = await readFile(fullPath, 'utf-8');
-          if (content.length === 0) continue;
+      const modelFindingsArrays = await this.processInBatches(
+        filesToAnalyze,
+        async (filePath) => {
+          this.throwIfCancelled(options);
+          
+          try {
+            const fullPath = join(repoRoot, filePath);
+            const content = await readFile(fullPath, 'utf-8');
+            if (content.length === 0) return [];
+            
+            const truncated = content.slice(0, MAX_FILE_CONTENT_LENGTH);
+            const modelFindings = await analyzeWithModel(
+              modelProvider,
+              filePath,
+              truncated,
+              options,
+              this,
+            );
+            return modelFindings.map((f) => this.createFinding(f));
+          } catch (error) {
+            return [
+              this.createErrorFinding(filePath, error, 'Model-driven analysis'),
+            ];
+          }
+        },
+      );
 
-          const truncated = content.slice(0, MAX_FILE_CONTENT_LENGTH);
-          const modelFindings = await analyzeWithModel(
-            modelProvider,
-            filePath,
-            truncated,
-            options,
-          );
-          findings.push(...modelFindings.map((f) => this.createFinding(f)));
-        } catch {
-          // Skip files that fail model analysis
-        }
-      }
+      findings.push(...modelFindingsArrays.flat());
     }
 
     return findings;
@@ -355,18 +366,28 @@ async function analyzeWithModel(
   filePath: string,
   content: string,
   options: ScanOptions,
+  tool: LintTool,
 ): Promise<Array<Omit<Finding, 'id' | 'toolId'>>> {
-  const response = await provider.sendRequest({
-    role: 'tool',
-    messages: [
-      { role: 'system', content: MODEL_SYSTEM_PROMPT },
-      {
-        role: 'user',
-        content: `File: ${filePath}\n\n\`\`\`\n${content}\n\`\`\``,
-      },
-    ],
-    signal: options.signal,
-  });
+  const response = await tool.sendRequestWithTimeout(
+    async (timeoutSignal) => {
+      // Merge user signal with timeout signal
+      const mergedSignal = options.signal
+        ? AbortSignal.any([options.signal, timeoutSignal])
+        : timeoutSignal;
+        
+      return provider.sendRequest({
+        role: 'tool',
+        messages: [
+          { role: 'system', content: MODEL_SYSTEM_PROMPT },
+          {
+            role: 'user',
+            content: `File: ${filePath}\n\n\`\`\`\n${content}\n\`\`\``,
+          },
+        ],
+        signal: mergedSignal,
+      });
+    },
+  );
 
   return parseModelResponse(response.content, filePath);
 }

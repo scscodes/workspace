@@ -97,27 +97,53 @@ function treeItemForCategory(id: CategoryId, badge: number): vscode.TreeItem {
   return item;
 }
 
-function treeItemForTool(node: ToolNode): vscode.TreeItem {
+function treeItemForTool(node: ToolNode, isRunning: boolean): vscode.TreeItem {
   const { entry, result } = node;
   const status = inlineStatus(result);
+  
+  // Show tool name only - don't make it clickable (fixes expand bug)
   const item = new vscode.TreeItem(
     entry.name,
     vscode.TreeItemCollapsibleState.Collapsed,
   );
   item.iconPath = new vscode.ThemeIcon(TOOL_ICONS[entry.id] ?? 'beaker');
-  item.description = status;
+  
+  // Show status in description
+  if (isRunning) {
+    item.description = '$(sync~spin) Running...';
+  } else if (status) {
+    item.description = status;
+  }
+  
   item.tooltip = entry.description + (status ? ` — ${status}` : ' — Expand and click Run to execute');
   if (result?.status === 'failed' && result.error) {
     item.tooltip = result.error;
   }
+  if (isRunning) {
+    item.tooltip = `${entry.description} — Running...`;
+  }
+  
+  // Don't set command - clicking should only expand, not run
+  item.contextValue = 'aidev.tool';
   return item;
 }
 
-function treeItemForRunTool(node: RunToolNode): vscode.TreeItem {
-  const item = new vscode.TreeItem('Run', vscode.TreeItemCollapsibleState.None);
-  item.iconPath = new vscode.ThemeIcon('play');
-  item.tooltip = `Run ${node.entry.name}`;
-  item.command = { command: node.entry.commandId, title: node.entry.name };
+function treeItemForRunTool(node: RunToolNode, isRunning: boolean): vscode.TreeItem {
+  // Align Run to the right by using description
+  const item = new vscode.TreeItem('', vscode.TreeItemCollapsibleState.None);
+  
+  if (isRunning) {
+    item.description = '$(sync~spin) Running...';
+    item.iconPath = new vscode.ThemeIcon('sync~spin');
+    item.tooltip = `${node.entry.name} is running...`;
+  } else {
+    item.description = 'Run';
+    // Use green play icon (check-circle or play-circle for colored icon)
+    item.iconPath = new vscode.ThemeIcon('play-circle');
+    item.tooltip = `Run ${node.entry.name}`;
+    item.command = { command: node.entry.commandId, title: node.entry.name };
+  }
+  
   item.contextValue = 'aidev.run';
   return item;
 }
@@ -181,6 +207,7 @@ export class AidevTreeProvider implements vscode.TreeDataProvider<AidevTreeNode>
   constructor(private readonly toolRunner: ToolRunner | undefined) {
     if (toolRunner) {
       toolRunner.onDidCompleteRun(() => this._onDidChangeTreeData.fire(undefined));
+      toolRunner.onDidChangeRunningState(() => this._onDidChangeTreeData.fire(undefined));
     }
   }
 
@@ -200,10 +227,12 @@ export class AidevTreeProvider implements vscode.TreeDataProvider<AidevTreeNode>
       return treeItemForCategory(element.id, this.getCategoryBadge(element.id));
     }
     if (element instanceof ToolNode) {
-      return treeItemForTool(element);
+      const isRunning = this.toolRunner?.isRunning(element.entry.id) ?? false;
+      return treeItemForTool(element, isRunning);
     }
     if (element instanceof RunToolNode) {
-      return treeItemForRunTool(element);
+      const isRunning = this.toolRunner?.isRunning(element.entry.id) ?? false;
+      return treeItemForRunTool(element, isRunning);
     }
     if (element instanceof FindingNode) {
       return treeItemForFinding(element.finding);
@@ -230,6 +259,7 @@ export class AidevTreeProvider implements vscode.TreeDataProvider<AidevTreeNode>
     }
 
     if (element instanceof ToolNode) {
+      // Always show Run node first (aligned right), then results
       const runNode = new RunToolNode(element.entry);
       if (!element.result) {
         return [runNode];

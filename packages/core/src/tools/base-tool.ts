@@ -9,6 +9,7 @@ import type {
   Severity,
 } from '../types/index.js';
 import { generateId, buildScanSummary } from '../utils/index.js';
+import { TOOL_MODEL_TIMEOUT_MS, TOOL_MODEL_BATCH_SIZE } from '../settings/defaults.js';
 
 // ─── Constants ──────────────────────────────────────────────────────────────
 
@@ -141,6 +142,32 @@ export abstract class BaseTool implements ITool {
   }
 
   /**
+   * Create a standardized error finding for tool execution failures.
+   */
+  protected createErrorFinding(
+    filePath: string,
+    error: unknown,
+    context?: string,
+  ): Finding {
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    const title = context
+      ? `${context} failed: ${filePath}`
+      : `Analysis failed: ${filePath}`;
+    
+    return this.createFinding({
+      title,
+      description: `Error: ${errorMessage}`,
+      location: { filePath, startLine: 0, endLine: 0 },
+      severity: 'warning',
+      metadata: {
+        errorType: 'tool_execution_failure',
+        errorMessage,
+        context: context ?? 'unknown',
+      },
+    });
+  }
+
+  /**
    * Check if execution has been cancelled.
    * Call this periodically in long-running `run()` implementations.
    */
@@ -155,6 +182,64 @@ export abstract class BaseTool implements ITool {
     if (this.isCancelled(options)) {
       throw new Error('Scan cancelled');
     }
+  }
+
+  /**
+   * Wrap a model request with timeout handling.
+   * Creates an AbortController that cancels after TOOL_MODEL_TIMEOUT_MS.
+   * 
+   * @param requestFn Function that takes an AbortSignal and returns a Promise
+   * @param timeoutMs Timeout in milliseconds (defaults to TOOL_MODEL_TIMEOUT_MS)
+   * @returns Promise that resolves with the result or rejects with timeout error
+   */
+  async sendRequestWithTimeout<T>(
+    requestFn: (signal: AbortSignal) => Promise<T>,
+    timeoutMs: number = TOOL_MODEL_TIMEOUT_MS,
+  ): Promise<T> {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => {
+      controller.abort();
+    }, timeoutMs);
+
+    try {
+      const result = await requestFn(controller.signal);
+      clearTimeout(timeoutId);
+      return result;
+    } catch (error) {
+      clearTimeout(timeoutId);
+      
+      if (controller.signal.aborted) {
+        throw new Error(`Model request timed out after ${timeoutMs}ms`);
+      }
+      
+      throw error;
+    }
+  }
+
+  /**
+   * Process items in parallel batches to avoid overwhelming the system.
+   * 
+   * @param items Array of items to process
+   * @param processor Async function to process each item
+   * @param batchSize Number of items to process concurrently (default: TOOL_MODEL_BATCH_SIZE)
+   * @returns Array of results in same order as items
+   */
+  protected async processInBatches<T, R>(
+    items: T[],
+    processor: (item: T, index: number) => Promise<R>,
+    batchSize: number = TOOL_MODEL_BATCH_SIZE,
+  ): Promise<R[]> {
+    const results: R[] = [];
+    
+    for (let i = 0; i < items.length; i += batchSize) {
+      const batch = items.slice(i, i + batchSize);
+      const batchResults = await Promise.all(
+        batch.map((item, batchIndex) => processor(item, i + batchIndex)),
+      );
+      results.push(...batchResults);
+    }
+    
+    return results;
   }
 
   // ─── Result Building ──────────────────────────────────────────────────

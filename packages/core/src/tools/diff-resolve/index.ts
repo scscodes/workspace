@@ -14,11 +14,11 @@ import {
   writeResolution,
 } from '../../git/conflicts.js';
 import type { ConflictHunk } from '../../git/conflicts.js';
+import { TOOL_MAX_CONTEXT_LINES } from '../../settings/defaults.js';
 
 // ─── Constants ──────────────────────────────────────────────────────────────
 
-/** Max context lines around a conflict to send to the model */
-const MAX_CONTEXT_LINES = 50;
+const MAX_CONTEXT_LINES = TOOL_MAX_CONTEXT_LINES;
 
 // ─── Types ──────────────────────────────────────────────────────────────────
 
@@ -49,12 +49,17 @@ export class DiffResolveTool extends BaseTool {
   readonly description = 'Detect and resolve merge conflicts. Auto-resolves safe diffs, escalates complex ones.';
 
   private deps: DiffResolveToolDeps | undefined;
+  private scannedFileCount = 0;
 
   /**
    * Set dependencies. Must be called before execute().
    */
   setDeps(deps: DiffResolveToolDeps): void {
     this.deps = deps;
+  }
+
+  protected override countScannedFiles(): number {
+    return this.scannedFileCount;
   }
 
   protected async run(options: ScanOptions): Promise<Finding[]> {
@@ -104,6 +109,8 @@ export class DiffResolveTool extends BaseTool {
     if (targetPaths && targetPaths.length > 0) {
       conflictPaths = conflictPaths.filter((p) => targetPaths.includes(p));
     }
+
+    this.scannedFileCount = conflictPaths.length;
 
     // Phase 3: Parse and classify conflicts
     const allResolutions: ConflictResolution[] = [];
@@ -173,9 +180,22 @@ export class DiffResolveTool extends BaseTool {
             filePath,
             hunkIndex,
             hunk,
+            this,
+            options,
           );
 
           allResolutions.push(modelResolution);
+
+          // Create error finding if model failed
+          if (modelResolution.error) {
+            findings.push(
+              this.createErrorFinding(
+                filePath,
+                new Error(modelResolution.error),
+                `Model resolution for hunk ${hunkIndex + 1}`,
+              ),
+            );
+          }
 
           findings.push(
             this.createFinding({
@@ -300,17 +320,29 @@ async function resolveWithModel(
   filePath: string,
   hunkIndex: number,
   hunk: ConflictHunk,
+  tool: DiffResolveTool,
+  options: ScanOptions,
 ): Promise<ConflictResolution> {
   const prompt = buildResolvePrompt(filePath, hunk);
 
   try {
-    const response = await modelProvider.sendRequest({
-      role: 'tool',
-      messages: [
-        { role: 'system', content: RESOLVE_SYSTEM_PROMPT },
-        { role: 'user', content: prompt },
-      ],
-    });
+    const response = await tool.sendRequestWithTimeout(
+      async (timeoutSignal) => {
+        // Merge user signal with timeout signal
+        const mergedSignal = options.signal
+          ? AbortSignal.any([options.signal, timeoutSignal])
+          : timeoutSignal;
+          
+        return modelProvider.sendRequest({
+          role: 'tool',
+          messages: [
+            { role: 'system', content: RESOLVE_SYSTEM_PROMPT },
+            { role: 'user', content: prompt },
+          ],
+          signal: mergedSignal,
+        });
+      },
+    );
 
     const resolvedContent = response.content.trim();
 
@@ -324,14 +356,17 @@ async function resolveWithModel(
       strategy: 'model',
       confidence,
     };
-  } catch {
-    // Model failed — fall back to theirs
+  } catch (error) {
+    // Model failed — fall back to theirs, but log error
+    console.error(`DiffResolveTool: Model resolution failed for ${filePath} hunk ${hunkIndex}:`, error);
+    
     return {
       filePath,
       hunkIndex,
       resolvedContent: hunk.theirs,
       strategy: 'theirs',
       confidence: 'low',
+      error: error instanceof Error ? error.message : String(error),
     };
   }
 }

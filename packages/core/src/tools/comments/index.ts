@@ -11,14 +11,15 @@ import { BaseTool } from '../base-tool.js';
 import { getBlame } from '../../git/blame.js';
 import type { BlameRange } from '../../git/blame.js';
 import { getRepoRoot } from '../../git/executor.js';
+import {
+  TOOL_MAX_FILE_CONTENT_LENGTH,
+  TOOL_STALE_COMMENT_THRESHOLD_DAYS,
+} from '../../settings/defaults.js';
 
 // ─── Constants ──────────────────────────────────────────────────────────────
 
-/** Comments older than this (in days) are flagged as stale */
-const STALE_THRESHOLD_DAYS = 180;
-
-/** Max file content length to send to the model */
-const MAX_FILE_CONTENT_LENGTH = 8000;
+const STALE_THRESHOLD_DAYS = TOOL_STALE_COMMENT_THRESHOLD_DAYS;
+const MAX_FILE_CONTENT_LENGTH = TOOL_MAX_FILE_CONTENT_LENGTH;
 
 /** Comment patterns by language */
 const COMMENT_PATTERNS: Record<SupportedLanguage, RegExp[]> = {
@@ -82,9 +83,14 @@ export class CommentsTool extends BaseTool {
   readonly description = 'Identify stale, verbose, or low-value comments for cleanup.';
 
   private deps: CommentsToolDeps | undefined;
+  private scannedFileCount = 0;
 
   setDeps(deps: CommentsToolDeps): void {
     this.deps = deps;
+  }
+
+  protected override countScannedFiles(): number {
+    return this.scannedFileCount;
   }
 
   protected async run(options: ScanOptions): Promise<Finding[]> {
@@ -97,19 +103,49 @@ export class CommentsTool extends BaseTool {
     const repoRoot = await getRepoRoot(cwd);
 
     // Determine files to scan
-    const filePaths = options.paths ?? [];
+    let filePaths = options.paths ?? [];
     if (filePaths.length === 0) {
-      // If no paths specified, this tool requires explicit file/dir targets
-      findings.push(
-        this.createFinding({
-          title: 'No files specified',
-          description:
-            'Comment pruning requires specific files or directories. Use @aidev /comments <path>.',
-          location: { filePath: repoRoot, startLine: 0, endLine: 0 },
-          severity: 'info',
-        }),
-      );
-      return findings;
+      // Auto-discover tracked files matching enabled languages
+      const { execGitStrict } = await import('../../git/executor.js');
+      const validExts = new Set<string>();
+      for (const [ext, lang] of Object.entries(EXT_TO_LANGUAGE)) {
+        if (enabledLanguages.includes(lang)) validExts.add(ext);
+      }
+      
+      const args = ['ls-files', '--cached', '--others', '--exclude-standard'];
+      try {
+        const output = await execGitStrict({ cwd: repoRoot, args });
+        filePaths = output
+          .split('\n')
+          .filter((f) => f.length > 0)
+          .filter((f) => {
+            const ext = getExtension(f);
+            return validExts.has(ext);
+          });
+      } catch {
+        // Git command failed - return empty findings
+        findings.push(
+          this.createFinding({
+            title: 'No files found',
+            description: 'Could not discover files. Ensure you are in a git repository or specify paths explicitly.',
+            location: { filePath: repoRoot, startLine: 0, endLine: 0 },
+            severity: 'info',
+          }),
+        );
+        return findings;
+      }
+      
+      if (filePaths.length === 0) {
+        findings.push(
+          this.createFinding({
+            title: 'No matching files found',
+            description: `No files found matching enabled languages: ${enabledLanguages.join(', ')}`,
+            location: { filePath: repoRoot, startLine: 0, endLine: 0 },
+            severity: 'info',
+          }),
+        );
+        return findings;
+      }
     }
 
     for (const filePath of filePaths) {
@@ -118,6 +154,8 @@ export class CommentsTool extends BaseTool {
       const ext = getExtension(filePath);
       const language = EXT_TO_LANGUAGE[ext];
       if (!language || !enabledLanguages.includes(language)) continue;
+
+      this.scannedFileCount++;
 
       try {
         const fullPath = join(repoRoot, filePath);
@@ -165,16 +203,12 @@ export class CommentsTool extends BaseTool {
           truncatedContent,
           comments,
           options,
+          this,
         );
         findings.push(...modelFindings.map((f) => this.createFinding(f)));
       } catch (error) {
         findings.push(
-          this.createFinding({
-            title: `Error analyzing ${filePath}`,
-            description: error instanceof Error ? error.message : String(error),
-            location: { filePath, startLine: 0, endLine: 0 },
-            severity: 'warning',
-          }),
+          this.createErrorFinding(filePath, error, 'Comment analysis'),
         );
       }
     }
@@ -257,6 +291,7 @@ async function evaluateWithModel(
   content: string,
   comments: CommentBlock[],
   options: ScanOptions,
+  tool: CommentsTool,
 ): Promise<Array<Omit<Finding, 'id' | 'toolId'>>> {
   if (comments.length === 0) return [];
 
@@ -264,20 +299,29 @@ async function evaluateWithModel(
     .map((c) => `L${String(c.startLine)}-${String(c.endLine)}: ${c.content.slice(0, 100)}`)
     .join('\n');
 
-  const response = await provider.sendRequest({
-    role: 'tool',
-    messages: [
-      {
-        role: 'system',
-        content: MODEL_SYSTEM_PROMPT,
-      },
-      {
-        role: 'user',
-        content: `File: ${filePath}\n\n## Source (truncated)\n\`\`\`\n${content}\n\`\`\`\n\n## Comments found\n${commentSummary}\n\nAnalyze each comment. For any that should be removed or tightened, output a line in this format:\nACTION|LINE_START|LINE_END|REASON|REPLACEMENT\n\nACTION is one of: REMOVE, REWRITE, KEEP\nFor KEEP, skip the line (only output REMOVE or REWRITE).\nREPLACEMENT is the suggested new comment text (empty for REMOVE).`,
-      },
-    ],
-    signal: options.signal,
-  });
+  const response = await tool.sendRequestWithTimeout(
+    async (timeoutSignal) => {
+      // Merge user signal with timeout signal
+      const mergedSignal = options.signal
+        ? AbortSignal.any([options.signal, timeoutSignal])
+        : timeoutSignal;
+        
+      return provider.sendRequest({
+        role: 'tool',
+        messages: [
+          {
+            role: 'system',
+            content: MODEL_SYSTEM_PROMPT,
+          },
+          {
+            role: 'user',
+            content: `File: ${filePath}\n\n## Source (truncated)\n\`\`\`\n${content}\n\`\`\`\n\n## Comments found\n${commentSummary}\n\nAnalyze each comment. For any that should be removed or tightened, output a line in this format:\nACTION|LINE_START|LINE_END|REASON|REPLACEMENT\n\nACTION is one of: REMOVE, REWRITE, KEEP\nFor KEEP, skip the line (only output REMOVE or REWRITE).\nREPLACEMENT is the suggested new comment text (empty for REMOVE).`,
+          },
+        ],
+        signal: mergedSignal,
+      });
+    },
+  );
 
   return parseModelResponse(response.content, filePath);
 }
