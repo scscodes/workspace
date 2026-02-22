@@ -4,6 +4,8 @@ import {
   getToolByCommand,
   getToolDefinitions,
   runAgentLoop,
+  WORKFLOW_REGISTRY,
+  matchWorkflow,
 } from '@aidev/core';
 import type {
   ToolId,
@@ -11,6 +13,7 @@ import type {
   ChatMessage,
   AgentConfig,
   AgentAction,
+  WorkflowDefinition,
 } from '@aidev/core';
 import type { ProviderManager } from '../providers/index.js';
 import type { ToolRunner } from '../tools/runner.js';
@@ -66,6 +69,13 @@ function createHandler(
     // ─── Slash command: direct tool invocation (bypass agent loop) ──────
     if (command) {
       await handleSlashCommand(command, request, stream, toolRunner);
+      return;
+    }
+
+    // ─── Workflow matching: detect intent and run tool chain ───────────
+    const workflow = matchWorkflow(request.prompt);
+    if (workflow) {
+      await handleWorkflow(workflow, request, stream, token, toolRunner);
       return;
     }
 
@@ -160,7 +170,7 @@ function createHandler(
 // ─── Slash Command Handler ─────────────────────────────────────────────────
 
 /**
- * Handle direct slash commands (e.g. /deadcode, /lint).
+ * Handle direct slash commands (e.g. /deadcode, /lint, /workflow).
  * Bypasses the agent loop — runs the tool directly, same as the original behavior.
  */
 async function handleSlashCommand(
@@ -169,6 +179,19 @@ async function handleSlashCommand(
   stream: vscode.ChatResponseStream,
   toolRunner?: ToolRunner,
 ): Promise<void> {
+  // Special case: /workflow lists available workflows
+  if (command === 'workflow') {
+    stream.markdown('## Available Workflows\n\n');
+    for (const workflow of WORKFLOW_REGISTRY) {
+      stream.markdown(`### ${workflow.name}\n`);
+      stream.markdown(`**ID**: \`${workflow.id}\`\n`);
+      stream.markdown(`**Description**: ${workflow.description}\n`);
+      stream.markdown(`**Triggers**: ${workflow.triggers.join(', ')}\n`);
+      stream.markdown(`**Tools**: ${workflow.toolIds.join(', ')}\n\n`);
+    }
+    return;
+  }
+
   const entry = getToolByCommand(command);
   if (!entry) {
     stream.markdown(`Unknown command: \`/${command}\`. Type \`@aidev\` for available commands.`);
@@ -231,6 +254,90 @@ async function handleSlashCommand(
       `**Error**: ${error instanceof Error ? error.message : String(error)}`,
     );
   }
+}
+
+// ─── Workflow Handler ──────────────────────────────────────────────────────
+
+/**
+ * Handle workflow execution — run a sequence of tools based on detected intent.
+ */
+async function handleWorkflow(
+  workflow: WorkflowDefinition,
+  request: vscode.ChatRequest,
+  stream: vscode.ChatResponseStream,
+  token: vscode.CancellationToken,
+  toolRunner?: ToolRunner,
+): Promise<void> {
+  if (!toolRunner) {
+    stream.markdown('**Tool runner not available.** The extension may not have fully initialized.');
+    return;
+  }
+
+  stream.markdown(`🔧 **Running workflow: ${workflow.name}**\n\n`);
+  stream.markdown(`Tools: ${workflow.toolIds.join(', ')}\n\n`);
+  stream.markdown('---\n\n');
+
+  const paths = extractPaths(request);
+  let aggregatedFindings = 0;
+
+  for (const toolId of workflow.toolIds) {
+    if (token.isCancellationRequested) {
+      stream.markdown('\n\n*Cancelled.*');
+      return;
+    }
+
+    const entry = TOOL_REGISTRY.find((t) => t.id === toolId);
+    if (!entry) {
+      stream.markdown(`⚠️ Tool ${toolId} not found in registry.\n\n`);
+      continue;
+    }
+
+    stream.markdown(`**${entry.name}**...\n\n`);
+
+    try {
+      const result = await toolRunner.run(toolId, {
+        paths: paths.length > 0 ? paths : undefined,
+      });
+
+      if (!result) {
+        stream.markdown('Tool returned no result.\n\n');
+        continue;
+      }
+
+      if (result.status === 'failed') {
+        stream.markdown(`❌ ${result.error ?? 'Tool failed'}\n\n`);
+        continue;
+      }
+
+      if (result.status === 'cancelled') {
+        stream.markdown('⏸️ Cancelled\n\n');
+        continue;
+      }
+
+      // Show summary
+      stream.markdown(`✓ ${String(result.findings.length)} findings\n\n`);
+      aggregatedFindings += result.findings.length;
+
+      // Show key findings
+      if (result.findings.length > 0) {
+        for (const finding of result.findings.slice(0, 3)) {
+          const icon = SEVERITY_ICONS[finding.severity] ?? DEFAULT_SEVERITY_ICON;
+          stream.markdown(`  ${icon} ${finding.title}\n`);
+        }
+        if (result.findings.length > 3) {
+          stream.markdown(`  ... and ${String(result.findings.length - 3)} more\n`);
+        }
+        stream.markdown('\n');
+      }
+    } catch (error: unknown) {
+      stream.markdown(
+        `❌ Error: ${error instanceof Error ? error.message : String(error)}\n\n`,
+      );
+    }
+  }
+
+  stream.markdown(`---\n\n`);
+  stream.markdown(`✅ **Workflow complete** — ${String(aggregatedFindings)} total findings\n`);
 }
 
 // ─── Agent Loop Helpers ────────────────────────────────────────────────────

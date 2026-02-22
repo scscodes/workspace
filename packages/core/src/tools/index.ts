@@ -162,27 +162,27 @@ export const TOOL_REGISTRY: readonly ToolRegistryEntry[] = [
   {
     id: 'pr-review',
     name: 'PR Review',
-    description: 'Pull and review pull requests on target branches. Stashes changes, checks out PR, and generates a TLDR summary.',
+    description: 'Review a pull request: lint, dead-code detection, and semantic analysis of the diff.',
     chatCommand: 'prreview',
     commandId: 'aidev.prReview',
     invocation: 'restricted',
     inputSchema: {
       type: 'object',
       properties: {
-        branchName: {
+        prNumber: {
+          type: 'number',
+          description: 'PR number to review (required).',
+        },
+        repo: {
           type: 'string',
-          description: 'Specific branch name to review (default: first available PR).',
+          description: 'Repository in owner/repo format (optional, uses current repo if not specified).',
         },
-        targetBranches: {
-          type: 'array',
-          items: { type: 'string' },
-          description: 'Target branches to check for PRs (default: ["main", "develop", "test"]).',
-        },
-        restoreOriginal: {
+        postComments: {
           type: 'boolean',
-          description: 'Restore original branch and pop stash after review (default: true).',
+          description: 'Post review summary as a comment on the PR (default: false).',
         },
       },
+      required: ['prNumber'],
     },
   },
 ] as const;

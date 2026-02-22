@@ -6,13 +6,14 @@ import type { ToolRunner } from '../tools/runner.js';
 
 // ─── Category → tools ──────────────────────────────────────────────────────
 
-const CATEGORY_IDS = ['general', 'hygiene', 'scm'] as const;
+const CATEGORY_IDS = ['general', 'hygiene', 'scm', 'review'] as const;
 type CategoryId = (typeof CATEGORY_IDS)[number];
 
 const TOOLS_BY_CATEGORY: Record<CategoryId, ToolId[]> = {
   general: ['tldr'],
   hygiene: ['dead-code', 'lint', 'comments'],
-  scm: ['branch-diff', 'diff-resolve', 'commit', 'pr-review'],
+  scm: ['branch-diff', 'diff-resolve', 'commit'],
+  review: ['pr-review'],
 };
 
 /** Section headers in uppercase with inline badge (like Extensions INSTALLED/RECOMMENDED). */
@@ -20,6 +21,7 @@ const CATEGORY_LABELS: Record<CategoryId, string> = {
   general: 'GENERAL',
   hygiene: 'HYGIENE',
   scm: 'SCM',
+  review: 'REVIEW',
 };
 
 // ─── Severity & tool icons ───────────────────────────────────────────────────

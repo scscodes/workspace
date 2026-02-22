@@ -3,43 +3,48 @@ import type {
   ScanOptions,
   Finding,
   IModelProvider,
-  TldrSummary,
-  TldrHighlight,
 } from '../../types/index.js';
 import { BaseTool } from '../base-tool.js';
-import { getRepoRoot } from '../../git/executor.js';
-import { getCurrentBranch } from '../../git/branch.js';
+import { getRepoRoot, execGit } from '../../git/executor.js';
 import {
-  stashChanges,
-  hasUncommittedChanges,
-  popStash,
-} from '../../git/stash.js';
-import {
-  listPotentialPullRequests,
-  checkoutRemoteBranch,
-  getPullRequestInfo,
-  type PullRequestInfo,
-} from '../../git/pr.js';
-import type { GitLogEntry } from '../../git/log.js';
-import {
-  TOOL_MAX_COMMITS_FOR_PROMPT,
+  TOOL_MODEL_TIMEOUT_MS,
+  TOOL_MAX_DIFF_LINES,
 } from '../../settings/defaults.js';
+import type { LintTool } from '../lint/index.js';
+import type { DeadCodeTool } from '../dead-code/index.js';
 
 // ─── Constants ──────────────────────────────────────────────────────────────
 
-const MAX_COMMITS_FOR_PROMPT = TOOL_MAX_COMMITS_FOR_PROMPT;
-
-/** Default target branches to check for PRs */
-const DEFAULT_TARGET_BRANCHES = ['main', 'develop', 'test'];
+const MODEL_TIMEOUT_MS = TOOL_MODEL_TIMEOUT_MS;
+const MAX_DIFF_LINES = TOOL_MAX_DIFF_LINES;
 
 // ─── Types ──────────────────────────────────────────────────────────────────
 
 /**
- * Dependencies injected into the PRReviewTool.
+ * Extracted information from a unified diff.
  */
+export interface ParsedDiffFile {
+  filePath: string;
+  additions: number;
+  deletions: number;
+  /** Selected lines of the diff content for this file */
+  diffContent: string;
+}
+
+export interface PrReviewSummary {
+  prNumber: number;
+  filesReviewed: number;
+  findingCount: number;
+  highlights: string[];
+}
+
 export interface PRReviewToolDeps {
-  /** Model provider for generating summaries */
+  /** Model provider for semantic review */
   modelProvider: IModelProvider;
+  /** Lint tool instance */
+  lintTool: LintTool;
+  /** Dead-code tool instance */
+  deadCodeTool: DeadCodeTool;
   /** Working directory */
   cwd: string;
 }
@@ -47,20 +52,20 @@ export interface PRReviewToolDeps {
 // ─── Implementation ─────────────────────────────────────────────────────────
 
 /**
- * PR Review tool — automatically pull and review pull requests.
+ * PR Review tool — analyze pull requests by PR number.
  *
  * Flow:
- * 1. Check for PRs on target branches (main, develop, test)
- * 2. If PR found, stash current changes
- * 3. Checkout the PR branch
- * 4. Analyze changes using model (diff + commit log)
- * 5. Generate TLDR summary
- * 6. Optionally restore original branch and pop stash
+ * 1. Use `gh pr diff {prNumber}` to fetch the unified diff
+ * 2. Parse diff to extract changed file paths
+ * 3. Run lint + dead-code analysis scoped to changed files only
+ * 4. Run a model-driven semantic review on the raw diff
+ * 5. Aggregate findings + optional gh pr review comment
  */
 export class PRReviewTool extends BaseTool {
   readonly id: ToolId = 'pr-review';
   readonly name = 'PR Review';
-  readonly description = 'Pull and review pull requests on target branches. Stashes changes, checks out PR, and generates a TLDR summary.';
+  readonly description =
+    'Review a pull request: lint, dead-code detection, and semantic analysis of the diff.';
 
   private deps: PRReviewToolDeps | undefined;
 
@@ -73,334 +78,356 @@ export class PRReviewTool extends BaseTool {
       throw new Error('PRReviewTool: Dependencies not set. Call setDeps() before execute().');
     }
 
-    const { modelProvider, cwd } = this.deps;
+    const { modelProvider, lintTool, deadCodeTool, cwd } = this.deps;
     const findings: Finding[] = [];
 
+    const prNumber = options.args?.prNumber as number | undefined;
+    if (typeof prNumber !== 'number' || prNumber < 1) {
+      throw new Error('prNumber must be a positive integer.');
+    }
+
+    const repo = (options.args?.repo as string | undefined) ?? '';
+    const postComments = (options.args?.postComments as boolean | undefined) ?? false;
+
     const repoRoot = await getRepoRoot(cwd);
-    const targetBranches = (options.args?.targetBranches as string[] | undefined) ?? DEFAULT_TARGET_BRANCHES;
-    const branchName = options.args?.branchName as string | undefined;
-    const restoreOriginal = (options.args?.restoreOriginal as boolean | undefined) ?? true;
 
-    // Track state for cleanup
-    let originalBranch: string | null = null;
-    let stashRef: string | null = null;
-    let prInfo: PullRequestInfo | null = null;
+    // Phase 1: Fetch diff
+    this.throwIfCancelled(options);
+    const diffResult = await execGit({
+      cwd: repoRoot,
+      args: ['diff', `HEAD`, `origin/refs/pull/${prNumber}/head`],
+    });
 
-    try {
-      // Phase 1: Get original branch
-      this.throwIfCancelled(options);
-      originalBranch = await getCurrentBranch(repoRoot);
-
-      // Phase 2: Check for PRs
-      this.throwIfCancelled(options);
-      if (branchName) {
-        // Specific branch requested
-        prInfo = await getPullRequestInfo(repoRoot, branchName, targetBranches);
-        if (!prInfo) {
-          findings.push(
-            this.createFinding({
-              title: 'PR not found',
-              description: `Branch "${branchName}" does not exist on remote or has no commits ahead of target branches.`,
-              location: { filePath: repoRoot, startLine: 0, endLine: 0 },
-              severity: 'info',
-            }),
-          );
-          return findings;
-        }
-      } else {
-        // Find first available PR
-        const prs = await listPotentialPullRequests(repoRoot, targetBranches);
-        if (prs.length === 0) {
-          findings.push(
-            this.createFinding({
-              title: 'No PRs found',
-              description: `No pull requests found on target branches: ${targetBranches.join(', ')}.`,
-              location: { filePath: repoRoot, startLine: 0, endLine: 0 },
-              severity: 'info',
-            }),
-          );
-          return findings;
-        }
-        // Use the first PR (most recent by default)
-        prInfo = prs[0];
-      }
-
-      if (!prInfo) {
-        return findings;
-      }
-
-      // Phase 3: Stash current changes if any
-      this.throwIfCancelled(options);
-      if (await hasUncommittedChanges(repoRoot)) {
-        stashRef = await stashChanges(repoRoot, `AIDev PR Review: ${prInfo.branch}`);
-      }
-
-      // Phase 4: Checkout PR branch
-      this.throwIfCancelled(options);
-      await checkoutRemoteBranch(repoRoot, prInfo.branch, undefined, true);
-
-      // Phase 5: Get diff and commit log
-      this.throwIfCancelled(options);
-      const targetRef = `origin/${prInfo.targetBranch}`;
-      
-      // Import execGit once at the top of this scope
-      const { execGit } = await import('../../git/executor.js');
-      
-      // Get diff between PR branch and target branch
-      const diffResult = await execGit({
+    // Try alternate approach if the first fails
+    let diff = diffResult.stdout;
+    if (diffResult.exitCode !== 0) {
+      const altResult = await execGit({
         cwd: repoRoot,
-        args: ['diff', `${targetRef}..HEAD`],
-      });
-      const diff = diffResult.exitCode === 0 ? diffResult.stdout : '';
-      
-      // Get commits in PR (commits in PR branch but not in target branch)
-      // Use git log with range to get commits that are in HEAD but not in targetRef
-      const logResult = await execGit({
-        cwd: repoRoot,
-        args: [
-          'log',
-          `--format=%H${String.fromCharCode(0x1f)}%an${String.fromCharCode(0x1f)}%ae${String.fromCharCode(0x1f)}%at${String.fromCharCode(0x1f)}%s${String.fromCharCode(0x1e)}`,
-          `-n`, String(MAX_COMMITS_FOR_PROMPT),
-          `${targetRef}..HEAD`,
-        ],
+        args: repo
+          ? ['pr', 'diff', String(prNumber), '--repo', repo]
+          : ['pr', 'diff', String(prNumber)],
       });
 
-      let prCommits: GitLogEntry[] = [];
-      if (logResult.exitCode === 0 && logResult.stdout.trim()) {
-        const { parseLogOutput } = await import('../../git/log.js');
-        prCommits = parseLogOutput(logResult.stdout, false);
-        
-        // Also get file lists for each commit
-        for (const commit of prCommits) {
-          const filesResult = await execGit({
-            cwd: repoRoot,
-            args: ['diff-tree', '--no-commit-id', '--name-only', '-r', commit.hash],
-          });
-          if (filesResult.exitCode === 0) {
-            commit.files = filesResult.stdout.trim().split('\n').filter((f) => f.length > 0);
-          }
-        }
-      }
-
-      // Phase 6: Generate review summary using model
-      this.throwIfCancelled(options);
-      const prompt = buildPRReviewPrompt(prInfo, diff, prCommits);
-
-      let response;
-      try {
-        response = await this.sendRequestWithTimeout(
-          async (timeoutSignal) => {
-            const mergedSignal = options.signal
-              ? AbortSignal.any([options.signal, timeoutSignal])
-              : timeoutSignal;
-            
-            return modelProvider.sendRequest({
-              role: 'chat',
-              messages: [
-                { role: 'system', content: SYSTEM_PROMPT },
-                { role: 'user', content: prompt },
-              ],
-              signal: mergedSignal,
-            });
-          },
-        );
-      } catch (error) {
-        findings.push(
-          this.createErrorFinding(repoRoot, error, 'PR review generation'),
-        );
-        return findings;
-      }
-
-      // Phase 7: Parse model response
-      this.throwIfCancelled(options);
-      const summary = parsePRReviewResponse(response.content, prInfo, prCommits);
-
-      // Store summary as finding
-      findings.push(
-        this.createFinding({
-          title: `PR Review: ${prInfo.branch} → ${prInfo.targetBranch}`,
-          description: summary.summary,
-          location: { filePath: repoRoot, startLine: 0, endLine: 0 },
-          severity: 'info',
-          metadata: {
-            summary,
-            prInfo,
-            commitCount: prCommits.length,
-            stashRef,
-            originalBranch,
-          },
-        }),
-      );
-
-      // Phase 8: Restore original branch if requested
-      if (restoreOriginal && originalBranch && originalBranch !== prInfo.branch) {
-        this.throwIfCancelled(options);
-        // Checkout original branch
-        const { execGitStrict } = await import('../../git/executor.js');
-        await execGitStrict({
-          cwd: repoRoot,
-          args: ['checkout', originalBranch],
-        });
-
-        // Pop stash if we stashed
-        if (stashRef) {
-          try {
-            await popStash(repoRoot);
-          } catch (error) {
-            // Stash pop might fail if there are conflicts - that's okay
-            findings.push(
-              this.createFinding({
-                title: 'Stash restore warning',
-                description: `Could not restore stashed changes: ${error instanceof Error ? error.message : String(error)}. Use 'git stash list' to see your stashes.`,
-                location: { filePath: repoRoot, startLine: 0, endLine: 0 },
-                severity: 'warning',
-              }),
-            );
-          }
-        }
-      } else {
-        // Add info about current state
+      if (altResult.exitCode !== 0) {
         findings.push(
           this.createFinding({
-            title: 'Branch checkout complete',
-            description: `Checked out branch "${prInfo.branch}". ${stashRef ? `Your changes were stashed (${stashRef}).` : ''}`,
+            title: 'PR diff fetch failed',
+            description: `Could not fetch PR #${prNumber} diff. Is the PR number valid? Error: ${altResult.stderr || 'unknown'}`,
             location: { filePath: repoRoot, startLine: 0, endLine: 0 },
-            severity: 'info',
+            severity: 'error',
+          }),
+        );
+        return findings;
+      }
+      diff = altResult.stdout;
+    }
+
+    // Phase 2: Parse diff to extract file paths
+    this.throwIfCancelled(options);
+    const parsedFiles = parseDiff(diff);
+
+    if (parsedFiles.length === 0) {
+      findings.push(
+        this.createFinding({
+          title: 'No changes in PR',
+          description: `PR #${prNumber} has no file changes or the diff could not be parsed.`,
+          location: { filePath: repoRoot, startLine: 0, endLine: 0 },
+          severity: 'info',
+        }),
+      );
+      return findings;
+    }
+
+    const changedFiles = parsedFiles.map((f) => f.filePath);
+
+    // Phase 3: Run lint on changed files
+    this.throwIfCancelled(options);
+    const lintResults = await lintTool.execute({
+      paths: changedFiles,
+      signal: options.signal,
+    });
+
+    if (lintResults.status === 'completed') {
+      findings.push(...lintResults.findings);
+    }
+
+    // Phase 4: Run dead-code on changed files
+    this.throwIfCancelled(options);
+    const deadCodeResults = await deadCodeTool.execute({
+      paths: changedFiles,
+      signal: options.signal,
+    });
+
+    if (deadCodeResults.status === 'completed') {
+      findings.push(...deadCodeResults.findings);
+    }
+
+    // Phase 5: Model-driven semantic review
+    this.throwIfCancelled(options);
+    const semFindings = await this.semanticReview(
+      modelProvider,
+      diff,
+      parsedFiles,
+      prNumber,
+      options,
+    );
+    findings.push(...semFindings);
+
+    // Phase 6: Optional comment posting
+    if (postComments) {
+      this.throwIfCancelled(options);
+      const summary = this.buildSummary(prNumber, findings);
+      const commentText = formatSummaryForComment(summary);
+
+      const ghArgs = repo
+        ? ['pr', 'review', String(prNumber), '--comment', '-b', commentText, '--repo', repo]
+        : ['pr', 'review', String(prNumber), '--comment', '-b', commentText];
+
+      const commentResult = await execGit({
+        cwd: repoRoot,
+        args: ghArgs,
+      });
+
+      if (commentResult.exitCode !== 0) {
+        findings.push(
+          this.createFinding({
+            title: 'Failed to post comment',
+            description: `Could not post review comment to PR #${prNumber}: ${commentResult.stderr}`,
+            location: { filePath: repoRoot, startLine: 0, endLine: 0 },
+            severity: 'warning',
           }),
         );
       }
-
-      return findings;
-    } catch (error) {
-      // Cleanup on error
-      if (originalBranch && restoreOriginal) {
-        try {
-          const { execGitStrict } = await import('../../git/executor.js');
-          await execGitStrict({
-            cwd: repoRoot,
-            args: ['checkout', originalBranch],
-          });
-          if (stashRef) {
-            await popStash(repoRoot);
-          }
-        } catch (cleanupError) {
-          // Ignore cleanup errors
-        }
-      }
-
-      findings.push(
-        this.createErrorFinding(repoRoot, error, 'PR review'),
-      );
-      return findings;
     }
+
+    return findings;
   }
 
-  protected countScannedFiles(_options: ScanOptions): number {
-    // PR review doesn't scan files in the traditional sense
-    return 0;
+  private async semanticReview(
+    modelProvider: IModelProvider,
+    diff: string,
+    parsedFiles: ParsedDiffFile[],
+    prNumber: number,
+    options: ScanOptions,
+  ): Promise<Finding[]> {
+    const findings: Finding[] = [];
+
+    const prompt = buildSemanticReviewPrompt(diff, parsedFiles, prNumber);
+
+    try {
+      const response = await this.sendRequestWithTimeout(
+        async (timeoutSignal) => {
+          const mergedSignal = options.signal
+            ? AbortSignal.any([options.signal, timeoutSignal])
+            : timeoutSignal;
+
+          return modelProvider.sendRequest({
+            role: 'chat',
+            messages: [
+              {
+                role: 'system',
+                content: SEMANTIC_REVIEW_SYSTEM_PROMPT,
+              },
+              {
+                role: 'user',
+                content: prompt,
+              },
+            ],
+            signal: mergedSignal,
+          });
+        },
+        MODEL_TIMEOUT_MS,
+      );
+
+      // Parse the model response into findings
+      const reviewFindings = parseSemanticReviewResponse(response.content);
+      findings.push(...reviewFindings);
+    } catch (error) {
+      findings.push(
+        this.createErrorFinding(
+          '',
+          error,
+          'Semantic review analysis',
+        ),
+      );
+    }
+
+    return findings;
+  }
+
+  private buildSummary(prNumber: number, findings: Finding[]): PrReviewSummary {
+    const uniqueFiles = new Set<string>();
+    const highlights: string[] = [];
+
+    for (const finding of findings) {
+      if (finding.location.filePath) {
+        uniqueFiles.add(finding.location.filePath);
+      }
+      // Collect error/warning highlights
+      if ((finding.severity === 'error' || finding.severity === 'warning') && highlights.length < 5) {
+        highlights.push(`${finding.title}: ${finding.description}`);
+      }
+    }
+
+    return {
+      prNumber,
+      filesReviewed: uniqueFiles.size,
+      findingCount: findings.length,
+      highlights,
+    };
+  }
+
+  protected countScannedFiles(options: ScanOptions): number {
+    const paths = options.paths ?? [];
+    return paths.length;
   }
 }
 
-// ─── Prompt Construction ────────────────────────────────────────────────────
+// ─── Diff Parsing ──────────────────────────────────────────────────────────
 
-const SYSTEM_PROMPT = `You are a pull request reviewer. Given a PR's diff and commit history, provide a clear, concise review summary.
+/**
+ * Parse a unified diff into file paths and metadata.
+ * Extracts file paths from diff headers like:
+ *   diff --git a/path/to/file b/path/to/file
+ */
+export function parseDiff(diff: string): ParsedDiffFile[] {
+  const files: ParsedDiffFile[] = [];
+  const lines = diff.split('\n');
 
-Rules:
-- Start with a 1-2 sentence high-level summary of what the PR does
-- Then list 3-7 key highlights, each on its own line prefixed with "- "
-- Each highlight should describe WHAT changed and WHY (infer intent from commits)
-- Note any potential issues, risks, or areas that need attention
-- Group related changes together rather than listing every commit
-- Use present tense ("Adds authentication", "Fixes layout bug")
-- Keep it brief — this is a TLDR review, not a detailed code review`;
+  let currentFile: ParsedDiffFile | null = null;
 
-function buildPRReviewPrompt(
-  prInfo: PullRequestInfo,
+  for (const line of lines) {
+    // Match "diff --git a/path b/path" pattern
+    const gitDiffMatch = line.match(/^diff --git a\/(.*?) b\/(.*)$/);
+    if (gitDiffMatch) {
+      // Save previous file if any
+      if (currentFile && currentFile.filePath) {
+        files.push(currentFile);
+      }
+
+      const filePath = gitDiffMatch[1]; // Use the 'a' path
+      currentFile = {
+        filePath,
+        additions: 0,
+        deletions: 0,
+        diffContent: '',
+      };
+    }
+
+    if (currentFile) {
+      // Track additions/deletions
+      if (line.startsWith('+') && !line.startsWith('+++')) {
+        currentFile.additions += 1;
+      } else if (line.startsWith('-') && !line.startsWith('---')) {
+        currentFile.deletions += 1;
+      }
+
+      // Accumulate diff content (sample, not full)
+      if (line.startsWith('+') || line.startsWith('-') || line.startsWith('@@')) {
+        if (currentFile.diffContent.split('\n').length < 20) {
+          currentFile.diffContent += line + '\n';
+        }
+      }
+    }
+  }
+
+  // Don't forget the last file
+  if (currentFile && currentFile.filePath) {
+    files.push(currentFile);
+  }
+
+  return files;
+}
+
+// ─── Semantic Review Prompting ────────────────────────────────────────────
+
+const SEMANTIC_REVIEW_SYSTEM_PROMPT = `You are a code reviewer. Analyze the provided PR diff for:
+- Logic errors and correctness issues
+- Missing error handling
+- Security vulnerabilities
+- Naming inconsistencies
+- Best practice violations
+
+For each issue, provide a clear, actionable finding.
+Format your response as a numbered list:
+1. [severity] Issue title: description
+2. [severity] Issue title: description
+...
+
+Severity levels: error, warning, info.`;
+
+function buildSemanticReviewPrompt(
   diff: string,
-  commits: GitLogEntry[],
+  parsedFiles: ParsedDiffFile[],
+  prNumber: number,
 ): string {
   const parts: string[] = [];
 
-  parts.push(`Review this pull request:`);
-  parts.push(`**Branch**: ${prInfo.branch} → ${prInfo.targetBranch}`);
-  parts.push(`**Commits ahead**: ${String(prInfo.commitsAhead)}`);
-  parts.push(`**Commits behind**: ${String(prInfo.commitsBehind)}`);
-  parts.push('');
+  parts.push(`## PR #${prNumber} Semantic Review\n`);
+  parts.push(`Changed files: ${String(parsedFiles.length)}\n`);
 
-  if (commits.length > 0) {
-    parts.push('## Commits');
-    parts.push('');
-    for (const commit of commits.slice(0, MAX_COMMITS_FOR_PROMPT)) {
-      const date = commit.timestamp.toISOString().split('T')[0];
-      const files = commit.files && commit.files.length > 0 ? ` [${commit.files.join(', ')}]` : '';
-      parts.push(`- ${date} | ${commit.subject}${files}`);
-    }
-    parts.push('');
+  for (const file of parsedFiles.slice(0, 10)) {
+    parts.push(`- ${file.filePath} (+${file.additions} -${file.deletions})`);
   }
 
-  if (diff) {
-    parts.push('## Diff Summary');
-    parts.push('');
-    // Limit diff size to avoid token limits
-    const diffLines = diff.split('\n');
-    const maxDiffLines = 500;
-    const truncatedDiff = diffLines.length > maxDiffLines
-      ? diffLines.slice(0, maxDiffLines).join('\n') + `\n\n... (${String(diffLines.length - maxDiffLines)} more lines)`
-      : diff;
-    parts.push('```diff');
-    parts.push(truncatedDiff);
-    parts.push('```');
+  if (parsedFiles.length > 10) {
+    parts.push(`... and ${parsedFiles.length - 10} more files`);
   }
+
+  parts.push('\n## Diff (first 500 lines):\n');
+
+  const diffLines = diff.split('\n');
+  const truncatedDiff = diffLines.length > MAX_DIFF_LINES
+    ? diffLines.slice(0, MAX_DIFF_LINES).join('\n')
+    : diff;
+
+  parts.push('```diff');
+  parts.push(truncatedDiff);
+  parts.push('```');
 
   return parts.join('\n');
 }
 
-// ─── Response Parsing ───────────────────────────────────────────────────────
+function parseSemanticReviewResponse(content: string): Finding[] {
+  const findings: Finding[] = [];
+  const lines = content.split('\n');
 
-function parsePRReviewResponse(
-  content: string,
-  prInfo: PullRequestInfo,
-  commits: GitLogEntry[],
-): TldrSummary {
-  const lines = content.trim().split('\n');
-
-  // First non-empty lines before bullet points = summary
-  const summaryLines: string[] = [];
-  const highlightLines: string[] = [];
-  let inHighlights = false;
-
+  // Parse numbered list items
   for (const line of lines) {
-    const trimmed = line.trim();
-    if (trimmed.startsWith('- ') || trimmed.startsWith('* ')) {
-      inHighlights = true;
-      highlightLines.push(trimmed.slice(2).trim());
-    } else if (!inHighlights && trimmed.length > 0) {
-      summaryLines.push(trimmed);
+    const match = line.match(/^\s*\d+\.\s*\[(error|warning|info)\]\s*([^:]+):\s*(.*)$/);
+    if (match) {
+      const [, severity, title, description] = match;
+      findings.push({
+        id: `review-${findings.length}`,
+        toolId: 'pr-review',
+        title: title.trim(),
+        description: description.trim(),
+        location: { filePath: '', startLine: 0, endLine: 0 },
+        severity: severity as 'error' | 'warning' | 'info',
+      });
     }
   }
 
-  // Collect all files mentioned across commits
-  const allFiles = new Set<string>();
-  const allCommits = new Set<string>();
-  for (const entry of commits) {
-    allCommits.add(entry.hash);
-    if (entry.files) {
-      for (const f of entry.files) allFiles.add(f);
+  return findings;
+}
+
+// ─── Comment Formatting ────────────────────────────────────────────────────
+
+function formatSummaryForComment(summary: PrReviewSummary): string {
+  const parts: string[] = [];
+
+  parts.push(`## PR Review Summary (PR #${summary.prNumber})`);
+  parts.push('');
+  parts.push(`- **Files Reviewed**: ${summary.filesReviewed}`);
+  parts.push(`- **Total Findings**: ${summary.findingCount}`);
+
+  if (summary.highlights.length > 0) {
+    parts.push('');
+    parts.push('### Key Issues');
+    for (const highlight of summary.highlights) {
+      parts.push(`- ${highlight}`);
     }
   }
 
-  const highlights: TldrHighlight[] = highlightLines.map((desc) => ({
-    description: desc,
-    files: [], // Could be enriched by matching file names in the description
-    commits: [],
-  }));
-
-  return {
-    scope: `${prInfo.branch} → ${prInfo.targetBranch}`,
-    since: commits.length > 0 ? commits[commits.length - 1].timestamp : new Date(),
-    until: commits.length > 0 ? commits[0].timestamp : new Date(),
-    commitCount: commits.length,
-    summary: summaryLines.join(' ') || content.trim(),
-    highlights,
-  };
+  return parts.join('\n');
 }
