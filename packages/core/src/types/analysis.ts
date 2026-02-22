@@ -1,4 +1,5 @@
 import type { CodeLocation, Severity, ExportFormat } from './common.js';
+import type { ITelemetry } from '../telemetry/index.js';
 
 /**
  * Identifier for each analysis tool. Used as the single source of truth
@@ -96,6 +97,8 @@ export interface ScanOptions {
   signal?: AbortSignal;
   /** Arbitrary tool-specific arguments from the agent loop (e.g. commit action, message) */
   args?: Record<string, unknown>;
+  /** Optional telemetry emitter for recording tool execution events */
+  telemetry?: ITelemetry;
 }
 
 /**

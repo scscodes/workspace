@@ -114,6 +114,11 @@ Constraints:
 /** Feature flag: enable speculative pre-execution of autonomous tools */
 export const SPECULATIVE_EXECUTION_ENABLED = true;
 
+// ─── Telemetry Settings ──────────────────────────────────────────────────────
+
+/** Length of generated run IDs (characters) */
+export const TELEMETRY_RUN_ID_LENGTH = 16;
+
 // ─── Root Settings ──────────────────────────────────────────────────────────
 
 /**

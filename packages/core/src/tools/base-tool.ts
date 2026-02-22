@@ -9,7 +9,8 @@ import type {
   Severity,
 } from '../types/index.js';
 import { generateId, buildScanSummary } from '../utils/index.js';
-import { TOOL_MODEL_TIMEOUT_MS, TOOL_MODEL_BATCH_SIZE } from '../settings/defaults.js';
+import { NullTelemetry } from '../telemetry/index.js';
+import { TOOL_MODEL_TIMEOUT_MS, TOOL_MODEL_BATCH_SIZE, TELEMETRY_RUN_ID_LENGTH } from '../settings/defaults.js';
 
 // ─── Constants ──────────────────────────────────────────────────────────────
 
@@ -39,11 +40,26 @@ export abstract class BaseTool implements ITool {
 
   /**
    * Execute the tool. Manages lifecycle around the subclass `run()` method.
+   * Automatically emits telemetry events (start, complete, error).
    */
   async execute(options: ScanOptions): Promise<ScanResult> {
     this.abortController = new AbortController();
     this.currentStatus = 'running';
     const startedAt = new Date();
+    const startedAtMs = startedAt.getTime();
+    const runId = this.generateRunId();
+
+    // Get telemetry instance, default to NullTelemetry
+    const telemetry = options.telemetry ?? new NullTelemetry();
+
+    // Emit tool.start event
+    telemetry.emit({
+      kind: 'tool.start',
+      runId,
+      toolId: this.id,
+      triggeredBy: 'direct',
+      timestamp: startedAtMs,
+    });
 
     const mergedOptions: ScanOptions = {
       ...options,
@@ -53,33 +69,62 @@ export abstract class BaseTool implements ITool {
     try {
       const findings = await this.run(mergedOptions);
       this.currentStatus = 'completed';
+      const completedAt = new Date();
+      const durationMs = completedAt.getTime() - startedAtMs;
+      const filesScanned = this.countScannedFiles(mergedOptions);
+
+      // Emit tool.complete event
+      telemetry.emit({
+        kind: 'tool.complete',
+        runId,
+        toolId: this.id,
+        durationMs,
+        findingCount: findings.length,
+        fileCount: filesScanned,
+        timestamp: completedAt.getTime(),
+      });
 
       return this.buildResult({
         status: 'completed',
         startedAt,
-        completedAt: new Date(),
+        completedAt,
         findings,
-        filesScanned: this.countScannedFiles(mergedOptions),
+        filesScanned,
       });
     } catch (error) {
+      const completedAt = new Date();
+      const durationMs = completedAt.getTime() - startedAtMs;
+      const errorMessage = error instanceof Error ? error.message : String(error);
+
       if (this.abortController.signal.aborted) {
         this.currentStatus = 'cancelled';
         return this.buildResult({
           status: 'cancelled',
           startedAt,
-          completedAt: new Date(),
+          completedAt,
           findings: [],
           filesScanned: 0,
         });
       }
 
       this.currentStatus = 'failed';
+
+      // Emit tool.error event
+      telemetry.emit({
+        kind: 'tool.error',
+        runId,
+        toolId: this.id,
+        error: errorMessage,
+        durationMs,
+        timestamp: completedAt.getTime(),
+      });
+
       return this.buildResult({
         status: 'failed',
         startedAt,
-        completedAt: new Date(),
+        completedAt,
         findings: [],
-        error: error instanceof Error ? error.message : String(error),
+        error: errorMessage,
         filesScanned: 0,
       });
     } finally {
@@ -100,6 +145,20 @@ export abstract class BaseTool implements ITool {
    */
   getStatus(): ScanStatus {
     return this.currentStatus;
+  }
+
+  /**
+   * Generate a unique run ID for this execution.
+   * Format: alphanumeric identifier suitable for tracking across systems.
+   */
+  protected generateRunId(): string {
+    // Generate a short base36 ID of the configured length
+    const chars = '0123456789abcdefghijklmnopqrstuvwxyz';
+    let result = '';
+    for (let i = 0; i < TELEMETRY_RUN_ID_LENGTH; i++) {
+      result += chars.charAt(Math.floor(Math.random() * chars.length));
+    }
+    return result;
   }
 
   /**

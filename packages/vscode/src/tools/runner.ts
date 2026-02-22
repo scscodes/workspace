@@ -1,5 +1,5 @@
 import * as vscode from 'vscode';
-import type { ScanResult, ScanOptions, ToolId } from '@aidev/core';
+import type { ScanResult, ScanOptions, ToolId, ITelemetry } from '@aidev/core';
 import {
   getToolEntry,
   DeadCodeTool,
@@ -10,6 +10,7 @@ import {
   BranchDiffTool,
   DiffResolveTool,
   PRReviewTool,
+  NullTelemetry,
 } from '@aidev/core';
 import type { SettingsManager } from '../settings/index.js';
 import type { ProviderManager } from '../providers/index.js';
@@ -50,6 +51,7 @@ export class ToolRunner implements vscode.Disposable {
     private readonly settings: SettingsManager,
     private readonly providers: ProviderManager,
     private readonly statusBar?: StatusBarApi,
+    private readonly telemetry?: ITelemetry,
   ) {}
 
   /**
@@ -139,6 +141,7 @@ export class ToolRunner implements vscode.Disposable {
             paths: options?.paths,
             signal: options?.signal,
             args: options?.args,
+            telemetry: this.telemetry ?? new NullTelemetry(),
           };
 
           progress.report({ message: 'Analyzing...' });

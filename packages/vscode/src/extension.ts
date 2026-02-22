@@ -1,4 +1,5 @@
 import * as vscode from 'vscode';
+import * as path from 'path';
 import { SettingsManager } from './settings/index.js';
 import { ProviderManager } from './providers/index.js';
 import { ToolRunner } from './tools/index.js';
@@ -6,6 +7,7 @@ import { registerCommands } from './commands/index.js';
 import { registerChatParticipant } from './chat/index.js';
 import { registerSidebar } from './sidebar/index.js';
 import { createStatusBarItems } from './status/index.js';
+import { SqliteTelemetry } from './telemetry/index.js';
 
 /**
  * Extension activation.
@@ -45,13 +47,22 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     }
     context.subscriptions.push(providers);
 
-    // 3. Status bar (single item; exposes setBusy/clearBusy for runner)
+    // 3. Telemetry — SQLite-based event storage
+    console.log('AIDev: Initializing Telemetry...');
+    const telemetryDbPath = path.join(context.globalStorageUri.fsPath, 'telemetry.db');
+    const telemetry = new SqliteTelemetry(telemetryDbPath);
+    context.subscriptions.push({
+      dispose: () => telemetry.dispose(),
+    });
+    console.log('AIDev: Telemetry initialized');
+
+    // 4. Status bar (single item; exposes setBusy/clearBusy for runner)
     const { disposables: statusBarDisposables, statusBar } = createStatusBarItems(context);
     context.subscriptions.push(...statusBarDisposables);
 
-    // 4. Tool runner — orchestrates tool execution with providers + settings + status bar
+    // 5. Tool runner — orchestrates tool execution with providers + settings + status bar + telemetry
     console.log('AIDev: Initializing ToolRunner...');
-    const toolRunner = new ToolRunner(settings, providers, statusBar);
+    const toolRunner = new ToolRunner(settings, providers, statusBar, telemetry);
     context.subscriptions.push(toolRunner);
     console.log('AIDev: ToolRunner initialized');
 
@@ -66,11 +77,11 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       console.error('AIDev: Failed to import TldrTool:', error);
     }
 
-    // 5. UI components — commands, chat, sidebar (status bar already registered above)
+    // 6. UI components — commands, chat, sidebar (status bar already registered above)
     console.log('AIDev: Registering UI components...');
     context.subscriptions.push(
       ...registerCommands(context, settings, toolRunner),
-      ...registerChatParticipant(context, providers, toolRunner),
+      ...registerChatParticipant(context, providers, toolRunner, telemetry),
       ...registerSidebar(context, toolRunner),
     );
     console.log('AIDev: UI components registered');

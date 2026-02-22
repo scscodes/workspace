@@ -19,7 +19,8 @@
     "watch": "node esbuild.config.mjs --watch",
     "clean": "rm -rf dist",
     "package": "vsce package",
-    "test": "echo \"No integration tests yet\""
+    "test": "vitest run --passWithNoTests",
+    "test:watch": "vitest"
   },
   "contributes": {
     "configuration": {
@@ -317,11 +318,14 @@
   },
   "dependencies": {
     "@aidev/core": "0.0.1",
+    "better-sqlite3": "^11.7.0",
     "zod": "^3.25.76"
   },
   "devDependencies": {
+    "@types/node": "^25.3.0",
     "@types/vscode": "^1.109.0",
     "esbuild": "^0.20.2",
-    "typescript": "^5.9.3"
+    "typescript": "^5.9.3",
+    "vitest": "^1.6.1"
   }
 }

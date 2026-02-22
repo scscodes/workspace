@@ -60,6 +60,7 @@ export {
   DEFAULT_COMMIT_CONSTRAINTS,
   DEFAULT_AGENT_SETTINGS,
   WORKFLOW_PARALLEL_TIMEOUT_MS,
+  TELEMETRY_RUN_ID_LENGTH,
 } from './settings/defaults.js';
 
 export {
@@ -73,6 +74,10 @@ export {
 
 // ─── Models ─────────────────────────────────────────────────────────────────
 export { resolveTier, resolveModelId } from './models/tiers.js';
+
+// ─── Telemetry ─────────────────────────────────────────────────────────────
+export type { ITelemetry, TelemetryEvent } from './telemetry/index.js';
+export { NullTelemetry } from './telemetry/index.js';
 
 // ─── Tools ──────────────────────────────────────────────────────────────────
 export {

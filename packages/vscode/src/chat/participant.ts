@@ -8,6 +8,8 @@ import {
   matchWorkflow,
   WORKFLOW_PARALLEL_TIMEOUT_MS,
   SPECULATIVE_EXECUTION_ENABLED,
+  generateId,
+  NullTelemetry,
 } from '@aidev/core';
 import type {
   ToolId,
@@ -17,6 +19,7 @@ import type {
   AgentAction,
   WorkflowDefinition,
   ScanResult,
+  ITelemetry,
 } from '@aidev/core';
 import type { ProviderManager } from '../providers/index.js';
 import type { ToolRunner } from '../tools/runner.js';
@@ -57,6 +60,7 @@ export function registerChatParticipant(
   _context: vscode.ExtensionContext,
   providerManager: ProviderManager,
   toolRunner?: ToolRunner,
+  telemetry?: ITelemetry,
 ): vscode.Disposable[] {
   // Guard: Chat Participant API may not exist in all environments
   if (!vscode.chat?.createChatParticipant) {
@@ -64,7 +68,7 @@ export function registerChatParticipant(
     return [];
   }
 
-  const handler = createHandler(providerManager, toolRunner);
+  const handler = createHandler(providerManager, toolRunner, telemetry);
   const participant = vscode.chat.createChatParticipant(PARTICIPANT_ID, handler);
   participant.iconPath = new vscode.ThemeIcon('beaker');
 
@@ -74,6 +78,7 @@ export function registerChatParticipant(
 function createHandler(
   providerManager: ProviderManager,
   toolRunner?: ToolRunner,
+  telemetry?: ITelemetry,
 ): vscode.ChatRequestHandler {
   return async (
     request: vscode.ChatRequest,
@@ -94,6 +99,7 @@ function createHandler(
     if (workflow) {
       // Speculative pre-execution: fire autonomous tools before UI updates
       const speculativeCache = createSpeculativeCache();
+      const workflowTelemetry = telemetry ?? new NullTelemetry();
       
       if (SPECULATIVE_EXECUTION_ENABLED && toolRunner) {
         const autonomousToolIds = workflow.toolIds.filter((toolId) => {
@@ -104,17 +110,40 @@ function createHandler(
         // Fire autonomous tools speculatively (do NOT await)
         const paths = extractPaths(request);
         for (const toolId of autonomousToolIds) {
+          const startTime = Date.now();
           const promise = toolRunner
             .run(toolId, {
               paths: paths.length > 0 ? paths : undefined,
             })
-            .catch(() => null); // Suppress errors—if speculation fails, normal flow will retry
+            .then((result) => {
+              // Emit speculative.hit event
+              if (result) {
+                const endTime = Date.now();
+                const savedMs = endTime - startTime;
+                workflowTelemetry.emit({
+                  kind: 'speculative.hit',
+                  toolId,
+                  savedMs,
+                  timestamp: endTime,
+                });
+              }
+              return result;
+            })
+            .catch(() => {
+              // Emit speculative.miss event
+              workflowTelemetry.emit({
+                kind: 'speculative.miss',
+                toolId,
+                timestamp: Date.now(),
+              });
+              return null;
+            });
           
           speculativeCache.set(toolId, promise as Promise<ScanResult>);
         }
       }
 
-      await handleWorkflow(workflow, request, stream, token, toolRunner, speculativeCache);
+      await handleWorkflow(workflow, request, stream, token, toolRunner, speculativeCache, workflowTelemetry);
       return;
     }
 
@@ -392,6 +421,7 @@ async function handleSlashCommand(
  * 2. Sequential phase: all 'restricted' tools run in order after parallel completes
  *
  * Wraps the parallel phase with a timeout (WORKFLOW_PARALLEL_TIMEOUT_MS).
+ * Emits workflow.start and workflow.complete telemetry events.
  */
 async function handleWorkflow(
   workflow: WorkflowDefinition,
@@ -400,16 +430,31 @@ async function handleWorkflow(
   token: vscode.CancellationToken,
   toolRunner?: ToolRunner,
   speculativeCache: SpeculativeCache = new Map(),
+  telemetry?: ITelemetry,
 ): Promise<void> {
   if (!toolRunner) {
     stream.markdown('**Tool runner not available.** The extension may not have fully initialized.');
     return;
   }
 
+  const workflowTelemetry = telemetry ?? new NullTelemetry();
+  const workflowRunId = generateId();
+  const workflowStartTime = Date.now();
+
+  // Emit workflow.start event
+  workflowTelemetry.emit({
+    kind: 'workflow.start',
+    runId: workflowRunId,
+    workflowId: workflow.id,
+    matchedInput: request.prompt,
+    timestamp: workflowStartTime,
+  });
+
   stream.markdown(`🔧 **Running workflow: ${workflow.name}**\n\n`);
   stream.markdown('---\n\n');
 
   const paths = extractPaths(request);
+  const parallelStartTime = Date.now();
 
   // Partition tools by invocation mode
   const autonomousTools = workflow.toolIds.filter((toolId) => {
@@ -533,6 +578,20 @@ async function handleWorkflow(
 
   stream.markdown(`---\n\n`);
   stream.markdown(`✅ **Workflow complete** — ${String(aggregatedFindings)} total findings\n`);
+
+  // Emit workflow.complete event
+  const workflowEndTime = Date.now();
+  const totalDurationMs = workflowEndTime - workflowStartTime;
+  const parallelMs = Date.now() - parallelStartTime;
+
+  workflowTelemetry.emit({
+    kind: 'workflow.complete',
+    runId: workflowRunId,
+    workflowId: workflow.id,
+    durationMs: totalDurationMs,
+    parallelMs,
+    timestamp: workflowEndTime,
+  });
 }
 
 /**
