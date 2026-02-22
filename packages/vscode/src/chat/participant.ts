@@ -7,6 +7,7 @@ import {
   WORKFLOW_REGISTRY,
   matchWorkflow,
   WORKFLOW_PARALLEL_TIMEOUT_MS,
+  SPECULATIVE_EXECUTION_ENABLED,
 } from '@aidev/core';
 import type {
   ToolId,
@@ -15,6 +16,7 @@ import type {
   AgentConfig,
   AgentAction,
   WorkflowDefinition,
+  ScanResult,
 } from '@aidev/core';
 import type { ProviderManager } from '../providers/index.js';
 import type { ToolRunner } from '../tools/runner.js';
@@ -32,6 +34,20 @@ const SEVERITY_ICONS: Record<string, string> = {
 
 /** Default severity icon when severity is unknown */
 const DEFAULT_SEVERITY_ICON = 'ℹ️';
+
+/**
+ * Cache for speculative pre-execution of autonomous tools.
+ * Maps toolId to a promise that resolves to the tool's ScanResult.
+ * Scoped to a single message handler invocation.
+ */
+type SpeculativeCache = Map<ToolId, Promise<ScanResult>>;
+
+/**
+ * Create a new speculative cache.
+ */
+function createSpeculativeCache(): SpeculativeCache {
+  return new Map();
+}
 
 /**
  * Register the @aidev chat participant for VSCode Copilot Chat.
@@ -76,7 +92,29 @@ function createHandler(
     // ─── Workflow matching: detect intent and run tool chain ───────────
     const workflow = matchWorkflow(request.prompt);
     if (workflow) {
-      await handleWorkflow(workflow, request, stream, token, toolRunner);
+      // Speculative pre-execution: fire autonomous tools before UI updates
+      const speculativeCache = createSpeculativeCache();
+      
+      if (SPECULATIVE_EXECUTION_ENABLED && toolRunner) {
+        const autonomousToolIds = workflow.toolIds.filter((toolId) => {
+          const entry = TOOL_REGISTRY.find((t) => t.id === toolId);
+          return entry && entry.invocation === 'autonomous';
+        });
+
+        // Fire autonomous tools speculatively (do NOT await)
+        const paths = extractPaths(request);
+        for (const toolId of autonomousToolIds) {
+          const promise = toolRunner
+            .run(toolId, {
+              paths: paths.length > 0 ? paths : undefined,
+            })
+            .catch(() => null); // Suppress errors—if speculation fails, normal flow will retry
+          
+          speculativeCache.set(toolId, promise as Promise<ScanResult>);
+        }
+      }
+
+      await handleWorkflow(workflow, request, stream, token, toolRunner, speculativeCache);
       return;
     }
 
@@ -171,7 +209,7 @@ function createHandler(
 // ─── Slash Command Handler ─────────────────────────────────────────────────
 
 /**
- * Handle direct slash commands (e.g. /deadcode, /lint, /workflow).
+ * Handle direct slash commands (e.g. /deadcode, /lint, /workflow, /decompose).
  * Bypasses the agent loop — runs the tool directly, same as the original behavior.
  */
 async function handleSlashCommand(
@@ -189,6 +227,92 @@ async function handleSlashCommand(
       stream.markdown(`**Description**: ${workflow.description}\n`);
       stream.markdown(`**Triggers**: ${workflow.triggers.join(', ')}\n`);
       stream.markdown(`**Tools**: ${workflow.toolIds.join(', ')}\n\n`);
+    }
+    return;
+  }
+
+  // Special case: /decompose requires objective parameter
+  if (command === 'decompose') {
+    if (!toolRunner) {
+      stream.markdown('**Task Decomposition** — tool runner not available.');
+      return;
+    }
+
+    // Extract objective from request prompt or ask user
+    let objective = request.prompt.trim();
+    if (!objective) {
+      stream.markdown(
+        '**Task Decomposition** requires an objective. Please provide: `/decompose <objective>`',
+      );
+      return;
+    }
+
+    // TODO: In a real implementation, show user the proposed subtask plan and ask for confirmation before executing.
+    // For now, we just execute directly.
+
+    stream.markdown(`**Decomposing objective:**\n\n> ${objective}\n\n**Planning subtasks...**\n\n`);
+
+    try {
+      const result = await toolRunner.run('decompose' as ToolId, {
+        args: {
+          objective,
+          maxSubtasks: 5,
+        },
+      });
+
+      if (!result) {
+        stream.markdown('**Error**: Tool execution returned no result. Check the console for details.');
+        return;
+      }
+
+      if (result.status === 'failed') {
+        stream.markdown(`**Error**: ${result.error ?? 'Decomposition failed'}\n\n`);
+        return;
+      }
+
+      // For decompose, the metadata should contain the DecomposeSummary
+      if (result.metadata?.decomposeSummary) {
+        const summary = result.metadata.decomposeSummary as any;
+        stream.markdown(`## Decomposition Plan\n\n`);
+        stream.markdown(`**Objective**: ${summary.objective}\n\n`);
+        stream.markdown(`**${String(summary.subtasks?.length ?? 0)} Subtasks**:\n\n`);
+
+        for (const subtask of summary.subtasks || []) {
+          stream.markdown(`### ${subtask.id}\n`);
+          stream.markdown(`${subtask.description}\n\n`);
+          stream.markdown(`**Tools**: ${(subtask.toolIds || []).join(', ')}\n`);
+          stream.markdown(`**Rationale**: ${subtask.rationale}\n\n`);
+        }
+
+        stream.markdown(`\n---\n\n`);
+        stream.markdown(`**Total findings from all subtasks**: ${String(summary.totalFindings ?? 0)}\n`);
+
+        if ((summary.consolidated || []).length > 0) {
+          stream.markdown(`\n**Consolidated findings**:\n\n`);
+          for (const finding of summary.consolidated || []) {
+            const icon = SEVERITY_ICONS[finding.severity] ?? DEFAULT_SEVERITY_ICON;
+            stream.markdown(`${icon} **${finding.title}**\n`);
+            stream.markdown(`${finding.description}\n`);
+            if (finding.location?.startLine > 0) {
+              stream.markdown(
+                `📍 \`${finding.location.filePath}:${String(finding.location.startLine)}\`\n`,
+              );
+            }
+            stream.markdown('\n');
+          }
+        } else {
+          stream.markdown('No consolidated findings.');
+        }
+      } else {
+        stream.markdown(`**Status**: ${result.status}\n\n`);
+        if (result.findings.length === 0) {
+          stream.markdown('Decomposition complete.');
+        }
+      }
+    } catch (error: unknown) {
+      stream.markdown(
+        `**Error**: ${error instanceof Error ? error.message : String(error)}`,
+      );
     }
     return;
   }
@@ -264,6 +388,7 @@ async function handleSlashCommand(
  *
  * Splits the workflow's tools into two phases:
  * 1. Parallel phase: all 'autonomous' tools run concurrently with Promise.all()
+ *    - If speculative cache has pre-started results, use those instead of re-running
  * 2. Sequential phase: all 'restricted' tools run in order after parallel completes
  *
  * Wraps the parallel phase with a timeout (WORKFLOW_PARALLEL_TIMEOUT_MS).
@@ -274,6 +399,7 @@ async function handleWorkflow(
   stream: vscode.ChatResponseStream,
   token: vscode.CancellationToken,
   toolRunner?: ToolRunner,
+  speculativeCache: SpeculativeCache = new Map(),
 ): Promise<void> {
   if (!toolRunner) {
     stream.markdown('**Tool runner not available.** The extension may not have fully initialized.');
@@ -307,7 +433,15 @@ async function handleWorkflow(
     );
 
     const parallelPromises = autonomousTools.map((toolId) =>
-      executeWorkflowToolWithProgress(toolId, paths, toolRunner, stream, token, parallelResults),
+      executeWorkflowToolWithProgress(
+        toolId,
+        paths,
+        toolRunner,
+        stream,
+        token,
+        parallelResults,
+        speculativeCache,
+      ),
     );
 
     // Wrap parallel execution with timeout
@@ -403,6 +537,7 @@ async function handleWorkflow(
 
 /**
  * Execute a single tool as part of a workflow, updating the progress map and streaming updates.
+ * Uses the speculative cache if the tool was pre-started; otherwise runs normally.
  */
 async function executeWorkflowToolWithProgress(
   toolId: ToolId,
@@ -411,6 +546,7 @@ async function executeWorkflowToolWithProgress(
   stream: vscode.ChatResponseStream,
   token: vscode.CancellationToken,
   resultMap: Map<ToolId, import('@aidev/core').ScanResult | null>,
+  speculativeCache: SpeculativeCache = new Map(),
 ): Promise<void> {
   if (token.isCancellationRequested) {
     resultMap.set(toolId, null);
@@ -425,7 +561,21 @@ async function executeWorkflowToolWithProgress(
   }
 
   try {
-    const result = await toolRunner.run(toolId, {
+    let result: ScanResult | null = null;
+
+    // Check speculative cache first
+    const speculativePromise = speculativeCache.get(toolId);
+    if (speculativePromise) {
+      result = await speculativePromise;
+      if (result) {
+        stream.markdown(`✓ ${entry.name} (cached from speculation) — ${String(result.findings.length)} findings\n`);
+        resultMap.set(toolId, result);
+        return;
+      }
+    }
+
+    // Not in cache or cache miss—run normally
+    result = await toolRunner.run(toolId, {
       paths: paths.length > 0 ? paths : undefined,
     });
 

@@ -75,6 +75,45 @@ export const TOOL_MODEL_TIMEOUT_MS = 30_000;
 /** Timeout for parallel workflow execution phase (milliseconds) */
 export const WORKFLOW_PARALLEL_TIMEOUT_MS = 60_000;
 
+// ─── Decompose Tool Settings ─────────────────────────────────────────────
+
+/** Default maximum number of subtasks for decomposition */
+export const DECOMPOSE_MAX_SUBTASKS_DEFAULT = 5;
+
+/** Maximum allowed subtasks (hard limit) */
+export const DECOMPOSE_MAX_SUBTASKS_LIMIT = 10;
+
+/** System prompt for task decomposition planning */
+export const DECOMPOSE_SYSTEM_PROMPT = `You are a task decomposition expert. Your role is to break down complex objectives into independent subtasks that can be executed in parallel.
+
+Given an objective, analyze it and decompose it into a minimal set of truly independent subtasks. Each subtask should:
+- Be executable with a specific set of tools
+- Not depend on the results of other subtasks
+- Contribute meaningfully to the overall objective
+
+Return ONLY valid JSON (no markdown, no explanations) in this exact format:
+[
+  {
+    "id": "subtask_1",
+    "description": "What this subtask does",
+    "toolIds": ["tool-name", "another-tool"],
+    "rationale": "Why this subtask is needed and how it contributes"
+  }
+]
+
+Available tools you may use: dead-code, lint, comments, tldr, branch-diff, pr-review.
+
+Constraints:
+- Each subtask must use only valid tools from the available list
+- Keep subtasks independent—no chaining dependencies
+- Limit to 5-10 subtasks maximum
+- Prefer combining multiple tools in one subtask if they're tightly related`;
+
+// ─── Speculative Execution Settings ──────────────────────────────────────
+
+/** Feature flag: enable speculative pre-execution of autonomous tools */
+export const SPECULATIVE_EXECUTION_ENABLED = true;
+
 // ─── Root Settings ──────────────────────────────────────────────────────────
 
 /**
