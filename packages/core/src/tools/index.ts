@@ -12,6 +12,8 @@ export { TldrTool } from './tldr/index.js';
 export { BranchDiffTool } from './branch-diff/index.js';
 export { DiffResolveTool } from './diff-resolve/index.js';
 export { PRReviewTool } from './pr-review/index.js';
+export { DecomposeTool } from './decompose/index.js';
+export type { DecomposeSummary, SubtaskResult } from './decompose/index.js';
 
 /**
  * Metadata for a registered tool.
@@ -183,6 +185,28 @@ export const TOOL_REGISTRY: readonly ToolRegistryEntry[] = [
         },
       },
       required: ['prNumber'],
+    },
+  },
+  {
+    id: 'decompose',
+    name: 'Task Decomposition',
+    description: 'Break down complex objectives into independent parallel subtasks.',
+    chatCommand: 'decompose',
+    commandId: 'aidev.decompose',
+    invocation: 'restricted',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        objective: {
+          type: 'string',
+          description: 'The objective to decompose into subtasks (required).',
+        },
+        maxSubtasks: {
+          type: 'number',
+          description: 'Maximum number of subtasks (default: 5, max: 10).',
+        },
+      },
+      required: ['objective'],
     },
   },
 ] as const;

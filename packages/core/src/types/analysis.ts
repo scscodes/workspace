@@ -4,7 +4,7 @@ import type { CodeLocation, Severity, ExportFormat } from './common.js';
  * Identifier for each analysis tool. Used as the single source of truth
  * for tool registration, command routing, and result attribution.
  */
-export type ToolId = 'dead-code' | 'lint' | 'comments' | 'commit' | 'tldr' | 'branch-diff' | 'diff-resolve' | 'pr-review';
+export type ToolId = 'dead-code' | 'lint' | 'comments' | 'commit' | 'tldr' | 'branch-diff' | 'diff-resolve' | 'pr-review' | 'decompose';
 
 /**
  * Controls whether the model can invoke a tool autonomously during the
