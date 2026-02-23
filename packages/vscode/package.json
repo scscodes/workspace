@@ -318,14 +318,18 @@
   },
   "dependencies": {
     "@aidev/core": "0.0.1",
-    "better-sqlite3": "^11.7.0",
-    "zod": "^3.25.76"
+    "@eslint/js": "^10.0.1",
+    "better-sqlite3": "^12.6.2",
+    "eslint": "^10.0.1",
+    "prettier": "^3.8.1",
+    "typescript-eslint": "^8.56.0",
+    "zod": "^4.3.6"
   },
   "devDependencies": {
     "@types/node": "^25.3.0",
     "@types/vscode": "^1.109.0",
-    "esbuild": "^0.20.2",
+    "esbuild": "^0.27.3",
     "typescript": "^5.9.3",
-    "vitest": "^1.6.1"
+    "vitest": "^4.0.18"
   }
 }
