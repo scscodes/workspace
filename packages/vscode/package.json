@@ -330,6 +330,6 @@
     "@types/vscode": "^1.109.0",
     "esbuild": "^0.27.3",
     "typescript": "^5.9.3",
-    "vitest": "^4.0.18"
+    "vitest": "^3.0.0"
   }
 }
