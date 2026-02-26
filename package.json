@@ -1,19 +1,45 @@
 {
   "name": "meridian",
-  "displayName": "VS Code Scaffold POC",
+  "displayName": "Meridian",
   "description": "DDD-based command registry architecture for VS Code extensions with workflow engine and local agent discovery",
   "version": "0.0.1",
   "publisher": "scscodes",
   "license": "MIT",
   "engines": {
     "node": ">=22.22.0",
-    "vscode": "^1.80.0"
+    "vscode": "^1.90.0"
   },
   "activationEvents": [
     "onStartupFinished"
   ],
   "main": "./out/main.js",
   "contributes": {
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "meridian-explorer",
+          "title": "Meridian",
+          "icon": "media/icon.svg"
+        }
+      ]
+    },
+    "views": {
+      "meridian-explorer": [
+        { "id": "meridian.git.view",      "name": "Git" },
+        { "id": "meridian.hygiene.view",  "name": "Hygiene" },
+        { "id": "meridian.workflow.view", "name": "Workflows" },
+        { "id": "meridian.agent.view",    "name": "Agents" }
+      ]
+    },
+    "chatParticipants": [
+      {
+        "id": "meridian",
+        "name": "meridian",
+        "fullName": "Meridian",
+        "description": "Git, hygiene, workflow, and agent assistant",
+        "isDefault": false
+      }
+    ],
     "commands": [
       {
         "command": "meridian.git.status",
@@ -67,7 +93,7 @@
       }
     ],
     "configuration": {
-      "title": "VS Code Scaffold POC",
+      "title": "Meridian",
       "properties": {
         "meridian.git.autofetch": {
           "type": "boolean",
@@ -100,7 +126,7 @@
   },
   "scripts": {
     "vscode:prepublish": "npm run compile",
-    "compile": "tsc -p ./",
+    "compile": "tsc -p ./ && cp -r media out/media 2>/dev/null || true",
     "watch": "tsc -watch -p ./",
     "pretest": "npm run compile",
     "test": "vitest",

@@ -24,6 +24,12 @@ import {
   TelemetryTracker,
   ConsoleTelemetrySink,
 } from "./infrastructure/telemetry";
+import { formatResultMessage } from "./infrastructure/result-handler";
+import { GitTreeProvider } from "./ui/tree-providers/git-tree-provider";
+import { HygieneTreeProvider } from "./ui/tree-providers/hygiene-tree-provider";
+import { WorkflowTreeProvider } from "./ui/tree-providers/workflow-tree-provider";
+import { AgentTreeProvider } from "./ui/tree-providers/agent-tree-provider";
+import { createChatParticipant } from "./ui/chat-participant";
 
 // ============================================================================
 // Telemetry Middleware Factory
@@ -106,6 +112,10 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   const config = new Config();
   await config.initialize();
 
+  // Output channel — primary user-facing log surface
+  const outputChannel = vscode.window.createOutputChannel("Meridian");
+  context.subscriptions.push(outputChannel);
+
   // Initialize telemetry
   const telemetry = new TelemetryTracker(new ConsoleTelemetrySink(false));
 
@@ -159,7 +169,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   }
 
   // Register all 10 VS Code commands. Each maps the "meridian.*" vscode ID
-  // to the internal bare CommandName. Results are logged only; UI is deferred.
+  // to the internal bare CommandName. Results surface via OutputChannel + notifications.
   for (const [vsCodeId, commandName] of COMMAND_MAP) {
     const disposable = vscode.commands.registerCommand(
       vsCodeId,
@@ -167,23 +177,37 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         const cmdCtx = getCommandContext(context);
         const command: Command = { name: commandName, params };
         const result = await router.dispatch(command, cmdCtx);
-        if (result.kind === "ok") {
-          logger.info(
-            `Command ${vsCodeId} succeeded`,
-            "activate",
-            result.value as unknown
-          );
+        const { level, message } = formatResultMessage(commandName, result);
+        outputChannel.appendLine(`[${new Date().toISOString()}] ${message}`);
+        if (level === "info") {
+          vscode.window.showInformationMessage(message);
         } else {
-          logger.error(
-            `Command ${vsCodeId} failed`,
-            "activate",
-            result.error
-          );
+          vscode.window.showErrorMessage(message);
         }
       }
     );
     context.subscriptions.push(disposable);
   }
+
+  // Register sidebar tree providers
+  const cmdCtx = getCommandContext(context);
+  const dispatch = (cmd: Command, ctx: CommandContext) => router.dispatch(cmd, ctx);
+
+  const gitTree      = new GitTreeProvider(gitProvider, logger);
+  const hygieneTree  = new HygieneTreeProvider(dispatch, cmdCtx, logger);
+  const workflowTree = new WorkflowTreeProvider(dispatch, cmdCtx, logger);
+  const agentTree    = new AgentTreeProvider(dispatch, cmdCtx, logger);
+
+  context.subscriptions.push(
+    vscode.window.registerTreeDataProvider("meridian.git.view",      gitTree),
+    vscode.window.registerTreeDataProvider("meridian.hygiene.view",  hygieneTree),
+    vscode.window.registerTreeDataProvider("meridian.workflow.view", workflowTree),
+    vscode.window.registerTreeDataProvider("meridian.agent.view",    agentTree),
+  );
+
+  // Register chat participant (@meridian in Copilot Chat)
+  const chatParticipant = createChatParticipant(router, cmdCtx, logger);
+  context.subscriptions.push(chatParticipant);
 
   logger.info(
     `Extension activated with ${router.listDomains().length} domains`,
