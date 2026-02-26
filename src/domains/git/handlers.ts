@@ -179,6 +179,26 @@ export function createSmartCommitHandler(
     const startTime = Date.now();
 
     try {
+      // Validate parameters
+      if (
+        params.autoApprove !== undefined &&
+        typeof params.autoApprove !== "boolean"
+      ) {
+        return failure({
+          code: "INVALID_PARAMS",
+          message: "autoApprove must be a boolean when provided",
+          context: "git.smartCommit",
+        });
+      }
+
+      if (params.branch !== undefined && typeof params.branch !== "string") {
+        return failure({
+          code: "INVALID_PARAMS",
+          message: "Branch must be a string when provided",
+          context: "git.smartCommit",
+        });
+      }
+
       logger.info(
         `Smart commit: analyzing changes for branch ${params.branch || "current"}`,
         "GitSmartCommitHandler"
