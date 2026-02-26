@@ -36,6 +36,15 @@ export function createStatusHandler(
   logger: Logger
 ): Handler<any, GitStatus> {
   return async (_ctx: CommandContext, params: any = {}) => {
+    // Validate branch parameter shape when provided
+    if (params.branch !== undefined && typeof params.branch !== "string") {
+      return failure({
+        code: "INVALID_PARAMS",
+        message: "Branch must be a string when provided",
+        context: "git.status",
+      });
+    }
+
     try {
       logger.debug(
         `Getting git status for branch: ${params.branch || "current"}`,
@@ -67,6 +76,15 @@ export function createPullHandler(
   logger: Logger
 ): Handler<any, void> {
   return async (_ctx: CommandContext, params: any = {}) => {
+    // Validate branch parameter shape when provided
+    if (params.branch !== undefined && typeof params.branch !== "string") {
+      return failure({
+        code: "INVALID_PARAMS",
+        message: "Branch must be a string when provided",
+        context: "git.pull",
+      });
+    }
+
     try {
       logger.info(
         `Pulling from git branch: ${params.branch || "current"}`,
@@ -102,6 +120,15 @@ export function createCommitHandler(
   logger: Logger
 ): Handler<any, void> {
   return async (_ctx: CommandContext, params: any = { message: "" }) => {
+    // Validate branch parameter shape when provided
+    if (params.branch !== undefined && typeof params.branch !== "string") {
+      return failure({
+        code: "INVALID_PARAMS",
+        message: "Branch must be a string when provided",
+        context: "git.commit",
+      });
+    }
+
     // Validate required params
     if (!params.message || params.message.trim().length === 0) {
       return failure({
