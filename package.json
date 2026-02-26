@@ -1,32 +1,119 @@
 {
-  "name": "aidev",
-  "private": true,
+  "name": "vscode-scaffold-poc",
+  "displayName": "VS Code Scaffold POC",
+  "description": "DDD-based command registry architecture for VS Code extensions with workflow engine and local agent discovery",
   "version": "0.0.1",
-  "description": "AI-powered developer toolkit for VSCode",
-  "workspaces": [
-    "packages/*"
-  ],
-  "scripts": {
-    "build": "npm run build --workspaces",
-    "build:core": "npm run build --workspace=@aidev/core",
-    "build:vscode": "npm run build --workspace=aidev-vscode",
-    "test": "npm run test --workspaces",
-    "test:core": "npm run test --workspace=@aidev/core",
-    "lint": "eslint \"packages/*/src/**/*.ts\"",
-    "format": "prettier --write \"packages/*/src/**/*.ts\"",
-    "format:check": "prettier --check \"packages/*/src/**/*.ts\"",
-    "clean": "npm run clean --workspaces"
-  },
+  "publisher": "scscodes",
+  "license": "MIT",
   "engines": {
-    "node": ">=18.0.0"
+    "vscode": "^1.80.0"
+  },
+  "activationEvents": [
+    "onStartupFinished"
+  ],
+  "main": "./out/main.js",
+  "contributes": {
+    "commands": [
+      {
+        "command": "vscode-scaffold-poc.git.status",
+        "title": "Git: Show Status",
+        "category": "Git"
+      },
+      {
+        "command": "vscode-scaffold-poc.git.pull",
+        "title": "Git: Pull",
+        "category": "Git"
+      },
+      {
+        "command": "vscode-scaffold-poc.git.commit",
+        "title": "Git: Commit",
+        "category": "Git"
+      },
+      {
+        "command": "vscode-scaffold-poc.git.smartCommit",
+        "title": "Git: Smart Commit (Interactive)",
+        "category": "Git"
+      },
+      {
+        "command": "vscode-scaffold-poc.hygiene.scan",
+        "title": "Hygiene: Scan Workspace",
+        "category": "Hygiene"
+      },
+      {
+        "command": "vscode-scaffold-poc.hygiene.cleanup",
+        "title": "Hygiene: Cleanup",
+        "category": "Hygiene"
+      },
+      {
+        "command": "vscode-scaffold-poc.chat.context",
+        "title": "Chat: Get Context",
+        "category": "Chat"
+      },
+      {
+        "command": "vscode-scaffold-poc.workflow.list",
+        "title": "Workflow: List All",
+        "category": "Workflow"
+      },
+      {
+        "command": "vscode-scaffold-poc.workflow.run",
+        "title": "Workflow: Run",
+        "category": "Workflow"
+      },
+      {
+        "command": "vscode-scaffold-poc.agent.list",
+        "title": "Agent: List All",
+        "category": "Agent"
+      }
+    ],
+    "configuration": {
+      "title": "VS Code Scaffold POC",
+      "properties": {
+        "vscode-scaffold-poc.git.autofetch": {
+          "type": "boolean",
+          "default": false,
+          "description": "Enable auto-fetch for git repositories"
+        },
+        "vscode-scaffold-poc.hygiene.enabled": {
+          "type": "boolean",
+          "default": true,
+          "description": "Enable workspace hygiene checks"
+        },
+        "vscode-scaffold-poc.hygiene.scanInterval": {
+          "type": "number",
+          "default": 60,
+          "description": "Workspace scan interval in minutes"
+        },
+        "vscode-scaffold-poc.log.level": {
+          "type": "string",
+          "enum": [
+            "debug",
+            "info",
+            "warn",
+            "error"
+          ],
+          "default": "info",
+          "description": "Logger output level"
+        }
+      }
+    }
+  },
+  "scripts": {
+    "vscode:prepublish": "npm run compile",
+    "compile": "tsc -p ./",
+    "watch": "tsc -watch -p ./",
+    "pretest": "npm run compile",
+    "test": "vitest",
+    "test:ui": "vitest --ui",
+    "test:coverage": "vitest --coverage",
+    "test:watch": "vitest --watch",
+    "lint": "echo 'Linting would run here'"
   },
   "devDependencies": {
-    "@types/node": "^25.3.0",
-    "@typescript-eslint/eslint-plugin": "^7.0.0",
-    "@typescript-eslint/parser": "^7.0.0",
-    "esbuild": "^0.27.3",
-    "eslint": "^8.57.0",
-    "prettier": "^3.2.0",
-    "typescript": "^5.9.3"
+    "@types/node": "^20.19.34",
+    "@types/vscode": "^1.80.0",
+    "@vitest/ui": "^1.0.4",
+    "@vitest/coverage-v8": "^1.0.4",
+    "typescript": "^5.9.3",
+    "vitest": "^1.0.4"
   }
 }

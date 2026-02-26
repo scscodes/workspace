@@ -1,0 +1,19 @@
+{
+  "id": "git-operator",
+  "description": "Local git operations handler. Demonstrates agent capability declaration and workflow trigger mapping.",
+  "version": "1.0.0",
+  "capabilities": [
+    "git.status",
+    "git.pull",
+    "git.commit",
+    "git.smartCommit"
+  ],
+  "workflowTriggers": [
+    "lint-and-commit"
+  ],
+  "metadata": {
+    "author": "vscode-scaffold-poc",
+    "schedule": "on-demand",
+    "tags": ["git", "local"]
+  }
+}

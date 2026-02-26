@@ -1,0 +1,34 @@
+{
+  "name": "lint-and-commit",
+  "description": "Run linter, validate, then commit if successful. Demonstrates conditional branching and error recovery.",
+  "version": "1.0.0",
+  "steps": [
+    {
+      "id": "lint",
+      "command": "hygiene.lint",
+      "params": {
+        "path": "."
+      },
+      "onSuccess": "validate",
+      "onFailure": "exit"
+    },
+    {
+      "id": "validate",
+      "command": "hygiene.scan",
+      "params": {
+        "path": "."
+      },
+      "onSuccess": "commit",
+      "onFailure": "exit"
+    },
+    {
+      "id": "commit",
+      "command": "git.smartCommit",
+      "params": {
+        "message": "chore: lint and validate passed",
+        "autoStageAll": true
+      },
+      "onSuccess": "exit"
+    }
+  ]
+}
