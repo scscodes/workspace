@@ -1,78 +1,145 @@
-/**
- * InboundAnalyzer Tests (5 tests)
- * Testing conflict detection between local and remote changes
- */
+import { describe, it, expect, vi } from "vitest";
+import { InboundAnalyzer } from "../src/domains/git/service";
+import { MockGitProvider, MockLogger, assertSuccess, assertFailure } from "./fixtures";
+import { success, failure } from "../src/types";
 
-import { describe, it, expect } from 'vitest';
-import { InboundAnalyzer } from '../src/domains/git/service';
-import { MockGitProvider, MockLogger } from './fixtures';
-
-describe('InboundAnalyzer', () => {
-  // Test 1: detectConflicts() finds M+M conflicts (high severity)
-  it('should detect M+M conflicts as high severity', async () => {
-    const gitProvider = new MockGitProvider();
+describe("InboundAnalyzer.analyze", () => {
+  it("returns up-to-date summary when there are no inbound changes", async () => {
+    const git = new MockGitProvider();
     const logger = new MockLogger();
-    const analyzer = new InboundAnalyzer(gitProvider, logger);
+    const analyzer = new InboundAnalyzer(git as any, logger);
 
-    // Mock inbound and local changes where both modified same file
-    gitProvider.setCurrentBranch('main');
-    gitProvider.setDiff('M	src/shared.ts\nM	src/other.ts');
+    vi.spyOn(git, "diff").mockResolvedValueOnce(success(""));
 
-    // Simulate both local and remote modified same file
-    // InboundAnalyzer will use git diff to detect this
-    expect(analyzer).toBeDefined();
+    const result = await analyzer.analyze();
+    const analysis = assertSuccess(result);
+
+    expect(analysis.totalInbound).toBe(0);
+    expect(analysis.totalLocal).toBe(0);
+    expect(analysis.conflicts.length).toBe(0);
+    expect(analysis.summary.description).toBe("Remote branch is up-to-date");
+    expect(analysis.summary.recommendations[0]).toContain("No remote changes");
   });
 
-  // Test 2: detectConflicts() finds M+D conflicts (high severity)
-  it('should detect M+D conflicts as high severity', async () => {
-    const gitProvider = new MockGitProvider();
+  it("returns inbound-only changes with no conflicts when local diff is empty", async () => {
+    const git = new MockGitProvider();
     const logger = new MockLogger();
-    const analyzer = new InboundAnalyzer(gitProvider, logger);
+    const analyzer = new InboundAnalyzer(git as any, logger);
 
-    // Mock case where local modified, remote deleted
-    gitProvider.setCurrentBranch('develop');
-    gitProvider.setDiff('D	src/obsolete.ts\nM	src/kept.ts');
+    vi.spyOn(git, "diff").mockResolvedValueOnce(
+      success("M\tsrc/shared.ts\nA\tsrc/added.ts")
+    );
+    vi.spyOn(git, "getDiff").mockResolvedValueOnce(success(""));
 
-    expect(analyzer).toBeDefined();
+    const result = await analyzer.analyze();
+    const analysis = assertSuccess(result);
+
+    expect(analysis.totalInbound).toBe(2);
+    expect(analysis.totalLocal).toBe(0);
+    expect(analysis.conflicts.length).toBe(0);
+    expect(analysis.summary.recommendations).toContain(
+      "✅ No conflicts detected. Safe to pull."
+    );
   });
 
-  // Test 3: detectConflicts() finds D+M conflicts (high severity)
-  it('should detect D+M conflicts as high severity', async () => {
-    const gitProvider = new MockGitProvider();
+  it("detects M/M conflicts as high severity", async () => {
+    const git = new MockGitProvider();
     const logger = new MockLogger();
-    const analyzer = new InboundAnalyzer(gitProvider, logger);
+    const analyzer = new InboundAnalyzer(git as any, logger);
 
-    // Mock case where local deleted, remote modified
-    gitProvider.setCurrentBranch('feature');
-    gitProvider.setDiff('M	src/kept.ts');
+    vi.spyOn(git, "diff").mockResolvedValueOnce(
+      success("M\tsrc/conflict.ts")
+    );
+    vi.spyOn(git, "getDiff").mockResolvedValueOnce(
+      success("M\tsrc/conflict.ts")
+    );
 
-    expect(analyzer).toBeDefined();
+    const result = await analyzer.analyze();
+    const analysis = assertSuccess(result);
+
+    expect(analysis.conflicts.length).toBe(1);
+    const conflict = analysis.conflicts[0];
+    expect(conflict.path).toBe("src/conflict.ts");
+    expect(conflict.localStatus).toBe("M");
+    expect(conflict.remoteStatus).toBe("M");
+    expect(conflict.severity).toBe("high");
+    expect(conflict.localChanges).toBeGreaterThan(0);
+    expect(conflict.remoteChanges).toBeGreaterThan(0);
   });
 
-  // Test 4: detectConflicts() finds A+A conflicts (medium severity)
-  it('should detect A+A conflicts as medium severity', async () => {
-    const gitProvider = new MockGitProvider();
+  it("detects A/A conflicts as medium severity", async () => {
+    const git = new MockGitProvider();
     const logger = new MockLogger();
-    const analyzer = new InboundAnalyzer(gitProvider, logger);
+    const analyzer = new InboundAnalyzer(git as any, logger);
 
-    // Mock case where both sides added same file
-    gitProvider.setCurrentBranch('main');
-    gitProvider.setDiff('A	src/new-feature.ts');
+    vi.spyOn(git, "diff").mockResolvedValueOnce(
+      success("A\tsrc/feature.ts")
+    );
+    vi.spyOn(git, "getDiff").mockResolvedValueOnce(
+      success("A\tsrc/feature.ts")
+    );
 
-    expect(analyzer).toBeDefined();
+    const result = await analyzer.analyze();
+    const analysis = assertSuccess(result);
+
+    expect(analysis.conflicts.length).toBe(1);
+    const conflict = analysis.conflicts[0];
+    expect(conflict.localStatus).toBe("A");
+    expect(conflict.remoteStatus).toBe("A");
+    expect(conflict.severity).toBe("medium");
   });
 
-  // Test 5: no conflicts returns empty array
-  it('should return empty conflicts array when no conflicts', async () => {
-    const gitProvider = new MockGitProvider();
+  it("gracefully handles malformed diff lines", async () => {
+    const git = new MockGitProvider();
     const logger = new MockLogger();
-    const analyzer = new InboundAnalyzer(gitProvider, logger);
+    const analyzer = new InboundAnalyzer(git as any, logger);
 
-    // Mock case with no overlapping changes
-    gitProvider.setCurrentBranch('main');
-    gitProvider.setDiff('M	src/remote-only-change.ts');
+    vi.spyOn(git, "diff").mockResolvedValueOnce(
+      success("not-a-valid-line\nM\tsrc/valid.ts")
+    );
+    vi.spyOn(git, "getDiff").mockResolvedValueOnce(success(""));
 
-    // When local and remote don't touch same files, no conflicts
-    expect(analyzer).toBeDefined();
+    const result = await analyzer.analyze();
+    const analysis = assertSuccess(result);
+
+    expect(analysis.totalInbound).toBe(1);
+    expect(analysis.conflicts.length).toBe(0);
+  });
+
+  it("propagates provider errors from fetch", async () => {
+    const git = new MockGitProvider();
+    const logger = new MockLogger();
+    const analyzer = new InboundAnalyzer(git as any, logger);
+
+    vi.spyOn(git, "fetch").mockResolvedValueOnce(
+      failure({
+        code: "GIT_FETCH_ERROR",
+        message: "network down",
+        context: "MockGitProvider.fetch",
+      })
+    );
+
+    const result = await analyzer.analyze();
+    const err = assertFailure(result);
+
+    expect(err.code).toBe("GIT_FETCH_ERROR");
+    expect(err.message).toBe("network down");
+  });
+
+  it("returns INBOUND_ANALYSIS_ERROR when current branch is invalid", async () => {
+    const git = new MockGitProvider();
+    const logger = new MockLogger();
+    const analyzer = new InboundAnalyzer(git as any, logger);
+
+    vi.spyOn(git, "getCurrentBranch").mockResolvedValueOnce(
+      success("")
+    );
+
+    const result = await analyzer.analyze();
+    const err = assertFailure(result);
+
+    expect(err.code).toBe("INBOUND_ANALYSIS_ERROR");
+    expect(err.context).toBe("InboundAnalyzer.analyze");
   });
 });
+

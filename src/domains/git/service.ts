@@ -707,10 +707,16 @@ export class InboundAnalyzer {
         return 0;
       }
 
-      // In a real implementation: const result = await this.gitProvider.diff(...)
-      // For now, return a placeholder value but don't throw
-      // This gracefully degrades when we can't get real stats
-      return Math.floor(Math.random() * 100) + 1;
+      // Deterministic heuristic based on path + ref; this is a placeholder
+      // that provides a stable, non-negative estimate without external I/O.
+      const key = `${path}|${ref}`;
+      let hash = 0;
+      for (let i = 0; i < key.length; i++) {
+        const code = key.charCodeAt(i);
+        hash = (hash * 31 + code) | 0;
+      }
+      const estimate = Math.abs(hash % 100) + 1;
+      return estimate;
     } catch (err) {
       this.logger.warn(
         `Failed to estimate changes for ${path}; returning 0`,
