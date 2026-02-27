@@ -1,0 +1,12 @@
+{
+  "id": "git-operator",
+  "description": "Local git operations handler. Run status, pull, commit, and smart commit.",
+  "version": "1.0.0",
+  "capabilities": ["git.status", "git.pull", "git.commit", "git.smartCommit"],
+  "workflowTriggers": ["lint-and-commit", "sync-repo"],
+  "metadata": {
+    "author": "meridian",
+    "schedule": "on-demand",
+    "tags": ["git", "local"]
+  }
+}

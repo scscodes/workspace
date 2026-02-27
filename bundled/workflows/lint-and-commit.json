@@ -1,0 +1,23 @@
+{
+  "name": "lint-and-commit",
+  "description": "Run hygiene scan, then smart commit if successful. Conditional branching and error recovery.",
+  "version": "1.0.0",
+  "steps": [
+    {
+      "id": "scan",
+      "command": "hygiene.scan",
+      "params": { "path": "." },
+      "onSuccess": "commit",
+      "onFailure": "exit"
+    },
+    {
+      "id": "commit",
+      "command": "git.smartCommit",
+      "params": {
+        "message": "chore: hygiene scan passed",
+        "autoStageAll": true
+      },
+      "onSuccess": "exit"
+    }
+  ]
+}

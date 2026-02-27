@@ -1,0 +1,12 @@
+{
+  "id": "hygiene-agent",
+  "description": "Workspace hygiene: scan for dead/large/stale files and run cleanup.",
+  "version": "1.0.0",
+  "capabilities": ["hygiene.scan", "hygiene.cleanup"],
+  "workflowTriggers": ["scan-then-cleanup", "lint-and-commit"],
+  "metadata": {
+    "author": "meridian",
+    "schedule": "on-demand",
+    "tags": ["hygiene", "workspace"]
+  }
+}

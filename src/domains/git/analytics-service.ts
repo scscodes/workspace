@@ -7,6 +7,8 @@ declare const require: any;
 
 // eslint-disable-next-line @typescript-eslint/no-var-requires
 const { execSync } = require("child_process");
+// eslint-disable-next-line @typescript-eslint/no-var-requires
+const micromatch = require("micromatch");
 import {
   AnalyticsPeriod,
   AnalyticsOptions,
@@ -14,10 +16,23 @@ import {
   AuthorMetric,
   CachedAnalytics,
   CommitMetric,
+  CommitFileChange,
   FileMetric,
   GitAnalyticsReport,
   TrendData,
 } from "./analytics-types";
+
+/** Glob patterns to exclude from file-level analytics (build artifacts, deps) */
+const ANALYTICS_EXCLUDE = [
+  "**/node_modules/**",
+  "**/.git/**",
+  "**/out/**",
+  "**/dist/**",
+  "**/build/**",
+  "**/.vscode/**",
+  "**/*.lock",
+  "**/package-lock.json",
+];
 
 export class GitAnalyzer {
   private cacheMap: Map<string, CachedAnalytics> = new Map();
@@ -149,6 +164,7 @@ export class GitAnalyzer {
               filesChanged: 0,
               insertions: 0,
               deletions: 0,
+              files: [],
             };
             commitLines.set(parts[0], []);
           }
@@ -183,23 +199,29 @@ export class GitAnalyzer {
     commit: CommitMetric,
     lines: string[]
   ): void {
-    let filesChanged = 0;
+    const files: CommitFileChange[] = [];
     let totalInsertions = 0;
     let totalDeletions = 0;
 
     for (const line of lines) {
-      const parts = line.split(/\s+/);
-      if (parts.length >= 2) {
+      // numstat format: "<insertions>\t<deletions>\t<path>"
+      // Binary files use "-" for insertions/deletions
+      const parts = line.split("\t");
+      if (parts.length >= 3) {
         const insertions = parseInt(parts[0]) || 0;
         const deletions = parseInt(parts[1]) || 0;
+        const path = parts[2].trim();
 
-        totalInsertions += insertions;
-        totalDeletions += deletions;
-        filesChanged++;
+        if (path) {
+          files.push({ path, insertions, deletions });
+          totalInsertions += insertions;
+          totalDeletions += deletions;
+        }
       }
     }
 
-    commit.filesChanged = filesChanged;
+    commit.files = files;
+    commit.filesChanged = files.length;
     commit.insertions = totalInsertions;
     commit.deletions = totalDeletions;
   }
@@ -219,32 +241,36 @@ export class GitAnalyzer {
   private aggregateFiles(commits: CommitMetric[]): FileMetric[] {
     const fileMap = new Map<string, FileMetric>();
 
-    // For now, use commit-level stats
-    // In a full implementation, would parse numstat per commit
-    // to get per-file stats
     for (const commit of commits) {
-      // Placeholder: would need to parse actual file paths from numstat
-      const path = `commit/${commit.hash}`;
-      if (!fileMap.has(path)) {
-        fileMap.set(path, {
-          path,
-          commitCount: 0,
-          insertions: 0,
-          deletions: 0,
-          volatility: 0,
-          authors: new Set(),
-          lastModified: commit.date,
-          risk: "low",
-        });
-      }
+      for (const fileChange of commit.files) {
+        const { path, insertions, deletions } = fileChange;
 
-      const metric = fileMap.get(path)!;
-      metric.commitCount++;
-      metric.insertions += commit.insertions;
-      metric.deletions += commit.deletions;
-      metric.authors.add(commit.author);
-      if (commit.date > metric.lastModified) {
-        metric.lastModified = commit.date;
+        // Skip build artifacts and ignored directories
+        if (micromatch.isMatch(path, ANALYTICS_EXCLUDE)) {
+          continue;
+        }
+
+        if (!fileMap.has(path)) {
+          fileMap.set(path, {
+            path,
+            commitCount: 0,
+            insertions: 0,
+            deletions: 0,
+            volatility: 0,
+            authors: new Set(),
+            lastModified: commit.date,
+            risk: "low",
+          });
+        }
+
+        const metric = fileMap.get(path)!;
+        metric.commitCount++;
+        metric.insertions += insertions;
+        metric.deletions += deletions;
+        metric.authors.add(commit.author);
+        if (commit.date > metric.lastModified) {
+          metric.lastModified = commit.date;
+        }
       }
     }
 

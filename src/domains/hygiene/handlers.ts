@@ -2,16 +2,65 @@
  * Hygiene Domain Handlers — workspace cleanup and analysis.
  */
 
+import * as fs from "fs";
+import * as path from "path";
+// eslint-disable-next-line @typescript-eslint/no-var-requires
+const micromatch = require("micromatch");
 import {
   Handler,
   CommandContext,
   success,
   failure,
   WorkspaceScan,
+  MarkdownFile,
   WorkspaceProvider,
   Logger,
 } from "../../types";
 import { HYGIENE_SETTINGS } from "../../constants";
+
+/**
+ * Read and parse .gitignore patterns from the workspace root.
+ * Returns an array of glob patterns safe to pass to micromatch.
+ */
+function readGitignorePatterns(workspaceRoot: string): string[] {
+  try {
+    const gitignorePath = path.join(workspaceRoot, ".gitignore");
+    const content = fs.readFileSync(gitignorePath, "utf-8");
+    return content
+      .split("\n")
+      .map(line => line.trim())
+      .filter(line => line.length > 0 && !line.startsWith("#"))
+      .map(line => {
+        // Strip trailing slash (directory marker), then always anchor with **/
+        // so patterns match against absolute paths from micromatch.isMatch()
+        const stripped = line.endsWith("/") ? line.slice(0, -1) : line;
+        return stripped.startsWith("**/") ? stripped : `**/${stripped}`;
+      });
+  } catch {
+    return [];
+  }
+}
+
+function readMeridianIgnorePatterns(workspaceRoot: string): string[] {
+  try {
+    const meridianIgnorePath = path.join(workspaceRoot, ".meridianignore");
+    const content = fs.readFileSync(meridianIgnorePath, "utf-8");
+    return content
+      .split("\n")
+      .map(line => line.trim())
+      .filter(line => line.length > 0 && !line.startsWith("#"))
+      .map(line => {
+        const stripped = line.endsWith("/") ? line.slice(0, -1) : line;
+        return stripped.startsWith("**/") ? stripped : `**/${stripped}`;
+      });
+  } catch {
+    return [];
+  }
+}
+
+function isExcluded(filePath: string, patterns: string[]): boolean {
+  return patterns.length > 0 && micromatch.isMatch(filePath, patterns);
+}
 
 // ============================================================================
 // Scan Handler
@@ -26,9 +75,18 @@ export function createScanHandler(
   workspaceProvider: WorkspaceProvider,
   logger: Logger
 ): Handler<Record<string, never>, WorkspaceScan> {
-  return async (_ctx: CommandContext) => {
+  return async (ctx: CommandContext) => {
     try {
       logger.info("Scanning workspace for hygiene issues", "HygieneScanHandler");
+
+      const workspaceRoot = ctx.workspaceFolders?.[0] ?? process.cwd();
+      const gitignorePatterns = readGitignorePatterns(workspaceRoot);
+      const meridianIgnorePatterns = readMeridianIgnorePatterns(workspaceRoot);
+      const excludePatterns = [
+        ...HYGIENE_SETTINGS.EXCLUDE_PATTERNS,
+        ...gitignorePatterns,
+        ...meridianIgnorePatterns,
+      ];
 
       // --- Dead files: temp/backup patterns ---
       const deadFiles: string[] = [];
@@ -49,7 +107,7 @@ export function createScanHandler(
         const result = await workspaceProvider.findFiles(pattern);
         if (result.kind === "ok") {
           for (const f of result.value) {
-            if (!deadFiles.includes(f)) {
+            if (!deadFiles.includes(f) && !isExcluded(f, excludePatterns)) {
               deadFiles.push(f);
             }
           }
@@ -64,19 +122,22 @@ export function createScanHandler(
         const result = await workspaceProvider.findFiles(pattern);
         if (result.kind === "ok") {
           for (const f of result.value) {
-            if (!logFiles.includes(f)) {
+            if (!logFiles.includes(f) && !isExcluded(f, excludePatterns)) {
               logFiles.push(f);
             }
           }
         }
       }
 
-      // --- Large files: read content to measure size ---
+      // --- Large files: read content to measure size, skip excluded paths ---
       const largeFiles: Array<{ path: string; sizeBytes: number }> = [];
       const allFilesResult = await workspaceProvider.findFiles("**/*");
 
       if (allFilesResult.kind === "ok") {
         for (const filePath of allFilesResult.value) {
+          if (isExcluded(filePath, excludePatterns)) {
+            continue;
+          }
           const readResult = await workspaceProvider.readFile(filePath);
           if (readResult.kind === "ok") {
             const sizeBytes = Buffer.byteLength(readResult.value, "utf8");
@@ -87,14 +148,30 @@ export function createScanHandler(
         }
       }
 
+      // --- Markdown files: collect all .md files with size + line count ---
+      const markdownFiles: MarkdownFile[] = [];
+      const mdResult = await workspaceProvider.findFiles("**/*.md");
+      if (mdResult.kind === "ok") {
+        for (const filePath of mdResult.value) {
+          if (isExcluded(filePath, excludePatterns)) continue;
+          const readResult = await workspaceProvider.readFile(filePath);
+          if (readResult.kind === "ok") {
+            const sizeBytes = Buffer.byteLength(readResult.value, "utf8");
+            const lineCount = readResult.value.split("\n").length;
+            markdownFiles.push({ path: filePath, sizeBytes, lineCount });
+          }
+        }
+      }
+
       const scan: WorkspaceScan = {
         deadFiles,
         largeFiles,
         logFiles,
+        markdownFiles,
       };
 
       logger.info(
-        `Found ${scan.deadFiles.length} dead files, ${scan.largeFiles.length} large files, ${scan.logFiles.length} log files`,
+        `Found ${scan.deadFiles.length} dead, ${scan.largeFiles.length} large, ${scan.logFiles.length} log, ${scan.markdownFiles.length} markdown files`,
         "HygieneScanHandler"
       );
 

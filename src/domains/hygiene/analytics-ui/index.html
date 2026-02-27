@@ -1,0 +1,101 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src https://cdn.jsdelivr.net {{WEBVIEW_CSP_SOURCE}} 'nonce-{{NONCE}}'; style-src {{WEBVIEW_CSP_SOURCE}} 'unsafe-inline'; img-src {{WEBVIEW_CSP_SOURCE}} https: data:; connect-src https:;">
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Hygiene Analytics</title>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <div class="analytics-panel">
+
+    <!-- Header -->
+    <div class="header-row">
+      <h1>Workspace Hygiene Analytics</h1>
+      <div class="header-actions">
+        <button id="exportJsonBtn" class="btn-secondary">↓ JSON</button>
+        <button id="exportCsvBtn" class="btn-secondary">↓ CSV</button>
+        <button id="settingsBtn" class="btn-secondary">⚙ Settings</button>
+        <button id="refreshBtn">Refresh</button>
+      </div>
+    </div>
+
+    <!-- Summary Cards -->
+    <div class="summary-cards">
+      <div class="card">
+        <h3>Scanned Files</h3>
+        <p class="value" id="totalFiles">—</p>
+        <p class="sub">excl. .git · node_modules · .vscode</p>
+      </div>
+      <div class="card">
+        <h3>Total Size</h3>
+        <p class="value" id="totalSize">—</p>
+      </div>
+      <div class="card">
+        <h3>Prune Candidates</h3>
+        <p class="value" id="pruneCount">—</p>
+        <p class="sub" id="pruneSize"></p>
+      </div>
+    </div>
+
+    <!-- Category Distribution — thin full-width stacked bar + HTML legend -->
+    <div class="category-bar-section">
+      <h3>File Type Distribution</h3>
+      <div class="category-bar-wrap">
+        <canvas id="categoryChart"></canvas>
+      </div>
+      <div id="categoryLegend" class="category-legend"></div>
+    </div>
+
+    <!-- Temporal chart — full width -->
+    <div class="chart-section">
+      <h3>File Modification Activity — Last 14 Days</h3>
+      <canvas id="temporalChart"></canvas>
+    </div>
+
+    <!-- Prune Candidates -->
+    <div class="prune-section">
+      <div class="prune-header">
+        <h3>Prune Candidates</h3>
+        <p class="prune-criteria" id="pruneCriteria"></p>
+      </div>
+      <div class="table-scroll">
+        <table id="pruneTable">
+          <thead>
+            <tr>
+              <th>Path</th>
+              <th>Size</th>
+              <th>Lines</th>
+              <th>Age (d)</th>
+              <th>Category</th>
+            </tr>
+          </thead>
+          <tbody id="pruneTableBody"></tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- All Files Table -->
+    <div class="table-container">
+      <h3>All Files <span class="table-hint">(first 100 · click header to sort)</span></h3>
+      <table id="filesTable">
+        <thead>
+          <tr>
+            <th data-col="path">Path</th>
+            <th data-col="sizeBytes">Size</th>
+            <th data-col="lineCount">Lines</th>
+            <th data-col="ageDays">Age (d)</th>
+            <th data-col="category">Category</th>
+            <th data-col="isPruneCandidate">Prune?</th>
+          </tr>
+        </thead>
+        <tbody id="filesTableBody"></tbody>
+      </table>
+    </div>
+
+  </div>
+  <script src="script.js" nonce="{{NONCE}}"></script>
+</body>
+</html>

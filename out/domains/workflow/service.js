@@ -2,10 +2,14 @@
 /**
  * Workflow Domain Service — discover, manage, and execute workflows.
  */
+var __importDefault = (this && this.__importDefault) || function (mod) {
+    return (mod && mod.__esModule) ? mod : { "default": mod };
+};
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.WorkflowDomainService = exports.WORKFLOW_COMMANDS = void 0;
 exports.validateWorkflowDefinition = validateWorkflowDefinition;
 exports.createWorkflowDomain = createWorkflowDomain;
+const node_path_1 = __importDefault(require("node:path"));
 const types_1 = require("../../types");
 const handlers_1 = require("./handlers");
 const workspace_1 = require("../../infrastructure/workspace");
@@ -18,7 +22,7 @@ exports.WORKFLOW_COMMANDS = [
     "workflow.run",
 ];
 class WorkflowDomainService {
-    constructor(logger, stepRunner) {
+    constructor(logger, stepRunner, workspaceRoot, extensionPath) {
         this.name = "workflow";
         this.handlers = {};
         this.workflowCache = new Map();
@@ -26,6 +30,8 @@ class WorkflowDomainService {
         this.stepRunner = null;
         this.logger = logger;
         this.stepRunner = stepRunner || this.createDefaultStepRunner();
+        this.workspaceRoot = workspaceRoot;
+        this.extensionPath = extensionPath;
         // Initialize handlers
         this.handlers = {
             "workflow.list": (0, handlers_1.createListWorkflowsHandler)(this.logger, () => this.discoverWorkflows()),
@@ -59,11 +65,30 @@ class WorkflowDomainService {
         this.workflowCache.clear();
     }
     /**
-     * Discover workflows from .vscode/workflows/
+     * Discover workflows from bundled and workspace locations.
+     * Workspace workflows override bundled ones (same name).
      */
     discoverWorkflows() {
         this.workflowCache.clear();
-        const workflowsDir = (0, workspace_1.getWorkflowsDir)();
+        // Load bundled workflows first
+        if (this.extensionPath) {
+            const bundledDir = node_path_1.default.join(this.extensionPath, "bundled", "workflows");
+            try {
+                const files = (0, workspace_1.listJsonFiles)(bundledDir);
+                for (const filePath of files) {
+                    const data = (0, workspace_1.readJsonFile)(filePath);
+                    if (data && validateWorkflowDefinition(data)) {
+                        this.workflowCache.set(data.name, data);
+                    }
+                }
+            }
+            catch {
+                // Missing bundled directory is not fatal
+                this.logger.debug(`Bundled workflows directory not found: ${bundledDir}`, "WorkflowDomainService.discoverWorkflows");
+            }
+        }
+        // Load workspace workflows (override bundled)
+        const workflowsDir = (0, workspace_1.getWorkflowsDir)(this.workspaceRoot);
         const files = (0, workspace_1.listJsonFiles)(workflowsDir);
         for (const filePath of files) {
             const data = (0, workspace_1.readJsonFile)(filePath);
@@ -143,7 +168,7 @@ function validateWorkflowDefinition(data) {
 /**
  * Factory function — creates and returns workflow domain service.
  */
-function createWorkflowDomain(logger, stepRunner) {
-    return new WorkflowDomainService(logger, stepRunner);
+function createWorkflowDomain(logger, stepRunner, workspaceRoot, extensionPath) {
+    return new WorkflowDomainService(logger, stepRunner, workspaceRoot, extensionPath);
 }
 //# sourceMappingURL=service.js.map

@@ -28,7 +28,7 @@ export interface Command<P = unknown> {
 }
 export type CommandName = GitCommandName | HygieneCommandName | ChatCommandName | WorkflowCommandName | AgentCommandName;
 export type GitCommandName = "git.status" | "git.pull" | "git.commit" | "git.smartCommit" | "git.analyzeInbound" | "git.showAnalytics" | "git.exportJson" | "git.exportCsv";
-export type HygieneCommandName = "hygiene.scan" | "hygiene.cleanup";
+export type HygieneCommandName = "hygiene.scan" | "hygiene.cleanup" | "hygiene.showAnalytics";
 export type ChatCommandName = "chat.context" | "chat.delegate";
 export type WorkflowCommandName = "workflow.list" | "workflow.run";
 export type AgentCommandName = "agent.list";
@@ -67,6 +67,7 @@ export interface GitProvider {
     getRemoteUrl(remote?: string): Promise<Result<string>>;
     getCurrentBranch(): Promise<Result<string>>;
     diff(revision: string, options?: string[]): Promise<Result<string>>;
+    getRecentCommits(count: number): Promise<Result<RecentCommit[]>>;
 }
 export interface WorkspaceProvider {
     findFiles(pattern: string): Promise<Result<string[]>>;
@@ -99,6 +100,13 @@ export interface GitFileChange {
     additions: number;
     deletions: number;
 }
+export interface RecentCommit {
+    shortHash: string;
+    message: string;
+    author: string;
+    insertions: number;
+    deletions: number;
+}
 export interface SmartCommitResult {
     success: boolean;
     commits: Array<{
@@ -110,6 +118,11 @@ export interface SmartCommitResult {
     totalGroups: number;
     message?: string;
 }
+export interface MarkdownFile {
+    path: string;
+    sizeBytes: number;
+    lineCount: number;
+}
 export interface WorkspaceScan {
     deadFiles: string[];
     largeFiles: Array<{
@@ -117,6 +130,7 @@ export interface WorkspaceScan {
         sizeBytes: number;
     }>;
     logFiles: string[];
+    markdownFiles: MarkdownFile[];
 }
 export interface ChatContext {
     activeFile?: string;

@@ -6,7 +6,7 @@
  * Organized by domain for clarity.
  */
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.AGENT_SETTINGS = exports.WORKFLOW_SETTINGS = exports.TELEMETRY_EVENT_KINDS = exports.PERFORMANCE_BOUNDS = exports.FILE_PATTERNS = exports.LOG_CONTEXT = exports.LOG_SETTINGS = exports.CHAT_SETTINGS = exports.HYGIENE_SETTINGS = exports.GIT_DEFAULTS = exports.CACHE_SETTINGS = exports.SIMILARITY_THRESHOLDS = exports.ERROR_CODES = exports.COMMAND_NAMES = void 0;
+exports.AGENT_SETTINGS = exports.WORKFLOW_SETTINGS = exports.TELEMETRY_EVENT_KINDS = exports.PERFORMANCE_BOUNDS = exports.FILE_PATTERNS = exports.LOG_CONTEXT = exports.LOG_SETTINGS = exports.CHAT_SETTINGS = exports.HYGIENE_ANALYTICS_EXCLUDE_PATTERNS = exports.HYGIENE_SETTINGS = exports.GIT_DEFAULTS = exports.CACHE_SETTINGS = exports.SIMILARITY_THRESHOLDS = exports.ERROR_CODES = exports.COMMAND_NAMES = void 0;
 // ============================================================================
 // Command Names
 // ============================================================================
@@ -26,6 +26,7 @@ exports.COMMAND_NAMES = {
     HYGIENE: {
         SCAN: "hygiene.scan",
         CLEANUP: "hygiene.cleanup",
+        SHOW_ANALYTICS: "hygiene.showAnalytics",
     },
     // Chat domain
     CHAT: {
@@ -143,18 +144,62 @@ exports.HYGIENE_SETTINGS = {
     MAX_FILE_SIZE_BYTES: 10 * 1024 * 1024,
     /** File patterns to exclude from hygiene checks */
     EXCLUDE_PATTERNS: [
+        // VCS + editor
         "**/node_modules/**",
         "**/.git/**",
+        "**/.vscode/**",
+        "**/.idea/**",
+        // Build / output
         "**/dist/**",
         "**/build/**",
-        "**/.vscode/**",
         "**/out/**",
+        "**/bundled/**",
+        // Python runtime & tooling
+        "**/.venv/**",
+        "**/venv/**",
+        "**/__pycache__/**",
+        "**/.pytest_cache/**",
+        "**/.mypy_cache/**",
+        "**/.ruff_cache/**",
+        "**/.tox/**",
+        "**/.eggs/**",
+        "**/*.egg-info/**",
+        // JS/TS coverage & caches
+        "**/coverage/**",
+        "**/.nyc_output/**",
+        "**/.cache/**",
     ],
     /** Log file patterns to detect */
     LOG_FILE_PATTERNS: ["*.log", "debug.log", "*-error.log"],
     /** Temporary file patterns */
     TEMP_FILE_PATTERNS: ["*.tmp", "*.temp", "*.bak", "*~"],
 };
+// ============================================================================
+// Hygiene Analytics — lighter exclusion set for the analytics scan.
+// Unlike HYGIENE_SETTINGS.EXCLUDE_PATTERNS, this intentionally keeps
+// artifact dirs (dist/, build/, out/, coverage/, .cache/, .next/) so they
+// are surfaced and can be flagged as prune candidates.
+// Gitignore patterns are NOT applied to analytics either.
+// ============================================================================
+exports.HYGIENE_ANALYTICS_EXCLUDE_PATTERNS = [
+    // VCS + editor noise — never analytically useful
+    "**/node_modules/**",
+    "**/.git/**",
+    "**/.vscode/**",
+    "**/.idea/**",
+    // Python runtime environments — can be enormous
+    "**/.venv/**",
+    "**/venv/**",
+    "**/.pytest_cache/**",
+    "**/.mypy_cache/**",
+    "**/.ruff_cache/**",
+    "**/.tox/**",
+    "**/.eggs/**",
+    "**/*.egg-info/**",
+    // JS package manager internals
+    "**/.yarn/**",
+    "**/.pnpm-store/**",
+];
 // ============================================================================
 // Chat Configuration
 // ============================================================================

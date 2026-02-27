@@ -10,8 +10,10 @@ export declare class AgentDomainService implements DomainService {
     readonly name = "agent";
     handlers: Partial<Record<AgentCommandName, Handler>>;
     private logger;
+    private workspaceRoot?;
+    private extensionPath?;
     private agentCache;
-    constructor(logger: Logger);
+    constructor(logger: Logger, workspaceRoot?: string, extensionPath?: string);
     /**
      * Initialize domain — discover agents.
      */
@@ -21,12 +23,12 @@ export declare class AgentDomainService implements DomainService {
      */
     teardown(): Promise<void>;
     /**
-     * Discover agents from .vscode/agents/
+     * Discover agents from bundled and workspace locations.
      */
     private discoverAgents;
 }
 /**
  * Factory function — creates and returns agent domain service.
  */
-export declare function createAgentDomain(logger: Logger): AgentDomainService;
+export declare function createAgentDomain(logger: Logger, workspaceRoot?: string, extensionPath?: string): AgentDomainService;
 //# sourceMappingURL=service.d.ts.map

@@ -13,6 +13,8 @@ import {
   failure,
 } from "../../types";
 import { createScanHandler, createCleanupHandler } from "./handlers";
+import { HygieneAnalyzer } from "./analytics-service";
+import { createShowHygieneAnalyticsHandler } from "./analytics-handler";
 
 /**
  * Hygiene domain commands.
@@ -20,22 +22,26 @@ import { createScanHandler, createCleanupHandler } from "./handlers";
 export const HYGIENE_COMMANDS: HygieneCommandName[] = [
   "hygiene.scan",
   "hygiene.cleanup",
+  "hygiene.showAnalytics",
 ];
 
 export class HygieneDomainService implements DomainService {
   readonly name = "hygiene";
 
   handlers: Partial<Record<HygieneCommandName, Handler>> = {};
+  public analyzer: HygieneAnalyzer;
   private logger: Logger;
   private scanIntervalMs: number = 60 * 60 * 1000; // 1 hour default
 
   constructor(workspaceProvider: WorkspaceProvider, logger: Logger) {
     this.logger = logger;
+    this.analyzer = new HygieneAnalyzer();
 
     // Initialize handlers
     this.handlers = {
       "hygiene.scan": createScanHandler(workspaceProvider, logger) as any,
       "hygiene.cleanup": createCleanupHandler(workspaceProvider, logger) as any,
+      "hygiene.showAnalytics": createShowHygieneAnalyticsHandler(this.analyzer, logger) as any,
     };
   }
 

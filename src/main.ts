@@ -4,6 +4,8 @@
  */
 
 import * as vscode from "vscode";
+import * as fs from "fs";
+import * as nodePath from "path";
 import { CommandRouter } from "./router";
 import { Logger } from "./infrastructure/logger";
 import { Config } from "./infrastructure/config";
@@ -30,6 +32,22 @@ import { HygieneTreeProvider } from "./ui/tree-providers/hygiene-tree-provider";
 import { WorkflowTreeProvider } from "./ui/tree-providers/workflow-tree-provider";
 import { AgentTreeProvider } from "./ui/tree-providers/agent-tree-provider";
 import { createChatParticipant } from "./ui/chat-participant";
+import { registerMeridianTools } from "./ui/lm-tools";
+import { AnalyticsWebviewProvider, HygieneAnalyticsWebviewProvider } from "./infrastructure/webview-provider";
+import { GitAnalyticsReport } from "./domains/git/analytics-types";
+import { HygieneAnalyticsReport, PruneConfig, PRUNE_DEFAULTS } from "./domains/hygiene/analytics-types";
+import { selectModel } from "./infrastructure/model-selector";
+
+/** Read user-configured prune settings, falling back to PRUNE_DEFAULTS */
+function readPruneConfig(): PruneConfig {
+  const cfg = vscode.workspace.getConfiguration("meridian.hygiene.prune");
+  return {
+    minAgeDays:   cfg.get<number>("minAgeDays",   PRUNE_DEFAULTS.minAgeDays),
+    maxSizeMB:    cfg.get<number>("maxSizeMB",    PRUNE_DEFAULTS.maxSizeMB),
+    minLineCount: cfg.get<number>("minLineCount",  PRUNE_DEFAULTS.minLineCount),
+    categories:   cfg.get<PruneConfig["categories"]>("categories", PRUNE_DEFAULTS.categories),
+  };
+}
 
 // ============================================================================
 // Telemetry Middleware Factory
@@ -93,8 +111,11 @@ const COMMAND_MAP: ReadonlyArray<[string, CommandName]> = [
   ["meridian.hygiene.cleanup", "hygiene.cleanup"],
   ["meridian.chat.context",    "chat.context"],
   ["meridian.workflow.list",   "workflow.list"],
-  ["meridian.workflow.run",    "workflow.run"],
-  ["meridian.agent.list",      "agent.list"],
+  ["meridian.agent.list",        "agent.list"],
+  ["meridian.git.showAnalytics",     "git.showAnalytics"],
+  ["meridian.git.exportJson",        "git.exportJson"],
+  ["meridian.git.exportCsv",         "git.exportCsv"],
+  ["meridian.hygiene.showAnalytics", "hygiene.showAnalytics"],
 ];
 
 // ============================================================================
@@ -122,6 +143,9 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   // Resolve workspace root from VS Code workspace folders
   const workspaceRoot =
     vscode.workspace.workspaceFolders?.[0]?.uri.fsPath ?? process.cwd();
+
+  // Resolve extension path
+  const extensionPath = context.extensionUri.fsPath;
 
   // Initialize real providers
   const gitProvider = createGitProvider(workspaceRoot);
@@ -152,8 +176,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     logger,
     (cmd, ctx) => router.dispatch(cmd, ctx)
   );
-  const workflowDomain = createWorkflowDomain(logger, stepRunner);
-  const agentDomain = createAgentDomain(logger);
+  const workflowDomain = createWorkflowDomain(logger, stepRunner, workspaceRoot, extensionPath);
+  const agentDomain = createAgentDomain(logger, workspaceRoot, extensionPath);
 
   router.registerDomain(gitDomain);
   router.registerDomain(hygieneDomain);
@@ -168,6 +192,34 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     throw new Error(validationResult.error.message);
   }
 
+  // Register sidebar tree providers
+  const cmdCtx = getCommandContext(context);
+
+  // Git analytics webview panel (full-width editor tab)
+  const analyticsPanel = new AnalyticsWebviewProvider(
+    context.extensionUri,
+    workspaceRoot,
+    async (opts) => {
+      const result = await router.dispatch({ name: "git.showAnalytics", params: opts }, cmdCtx);
+      if (result.kind === "ok") { return result.value as GitAnalyticsReport; }
+      throw new Error((result as any).error?.message ?? "Analytics failed");
+    }
+  );
+
+  // Hygiene analytics webview panel
+  const hygieneAnalyticsPanel = new HygieneAnalyticsWebviewProvider(
+    context.extensionUri,
+    async () => {
+      const freshCtx = getCommandContext(context);
+      const result = await router.dispatch(
+        { name: "hygiene.showAnalytics", params: readPruneConfig() },
+        freshCtx
+      );
+      if (result.kind === "ok") return result.value as HygieneAnalyticsReport;
+      throw new Error((result as any).error?.message ?? "Hygiene analytics failed");
+    }
+  );
+
   // Register all 10 VS Code commands. Each maps the "meridian.*" vscode ID
   // to the internal bare CommandName. Results surface via OutputChannel + notifications.
   for (const [vsCodeId, commandName] of COMMAND_MAP) {
@@ -175,8 +227,33 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       vsCodeId,
       async (params: Record<string, unknown> = {}) => {
         const cmdCtx = getCommandContext(context);
+
+        // hygiene.showAnalytics: inject user prune config before dispatching
+        if (commandName === "hygiene.showAnalytics") {
+          const pruneResult = await router.dispatch(
+            { name: "hygiene.showAnalytics", params: readPruneConfig() },
+            cmdCtx
+          );
+          if (pruneResult.kind === "ok") {
+            await hygieneAnalyticsPanel.openPanel(pruneResult.value as HygieneAnalyticsReport);
+            outputChannel.appendLine(`[${new Date().toISOString()}] Hygiene analytics panel opened`);
+          } else {
+            const { message } = formatResultMessage(commandName, pruneResult);
+            vscode.window.showErrorMessage(message);
+          }
+          return;
+        }
+
         const command: Command = { name: commandName, params };
         const result = await router.dispatch(command, cmdCtx);
+
+        // git.showAnalytics opens the webview panel instead of a notification
+        if (commandName === "git.showAnalytics" && result.kind === "ok") {
+          await analyticsPanel.openPanel(result.value as GitAnalyticsReport);
+          outputChannel.appendLine(`[${new Date().toISOString()}] Analytics panel opened`);
+          return;
+        }
+
         const { level, message } = formatResultMessage(commandName, result);
         outputChannel.appendLine(`[${new Date().toISOString()}] ${message}`);
         if (level === "info") {
@@ -189,11 +266,9 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     context.subscriptions.push(disposable);
   }
 
-  // Register sidebar tree providers
-  const cmdCtx = getCommandContext(context);
   const dispatch = (cmd: Command, ctx: CommandContext) => router.dispatch(cmd, ctx);
 
-  const gitTree      = new GitTreeProvider(gitProvider, logger);
+  const gitTree      = new GitTreeProvider(gitProvider, logger, workspaceRoot);
   const hygieneTree  = new HygieneTreeProvider(dispatch, cmdCtx, logger);
   const workflowTree = new WorkflowTreeProvider(dispatch, cmdCtx, logger);
   const agentTree    = new AgentTreeProvider(dispatch, cmdCtx, logger);
@@ -205,9 +280,133 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     vscode.window.registerTreeDataProvider("meridian.agent.view",    agentTree),
   );
 
+  // Refresh commands — wire to each tree provider's refresh() method
+  context.subscriptions.push(
+    vscode.commands.registerCommand("meridian.git.refresh",      () => gitTree.refresh()),
+    vscode.commands.registerCommand("meridian.hygiene.refresh",  () => hygieneTree.refresh()),
+    vscode.commands.registerCommand("meridian.workflow.refresh", () => workflowTree.refresh()),
+    vscode.commands.registerCommand("meridian.agent.refresh",    () => agentTree.refresh()),
+  );
+
+  // workflow.run — registered after tree providers so workflowTree is in scope.
+  // VS Code passes the TreeItem as the first arg when invoked from context/inline menus
+  // but passes { name: "..." } when invoked from it.command.arguments (click).
+  context.subscriptions.push(
+    vscode.commands.registerCommand(
+      "meridian.workflow.run",
+      async (arg: unknown = {}) => {
+        const freshCtx = getCommandContext(context);
+        let name: string | undefined;
+
+        if (arg && typeof arg === "object") {
+          const obj = arg as Record<string, unknown>;
+          if (typeof obj.name === "string" && obj.name) {
+            name = obj.name;
+          } else if (typeof obj.label === "string" && obj.label) {
+            name = obj.label;
+          }
+        }
+
+        if (!name) {
+          vscode.window.showErrorMessage("No workflow selected.");
+          return;
+        }
+
+        workflowTree.setRunning(name);
+        const result = await router.dispatch({ name: "workflow.run", params: { name } }, freshCtx);
+        const r = result.kind === "ok" ? (result.value as any) : null;
+        workflowTree.setLastRun(name, r?.success ?? result.kind === "ok", r?.duration ?? 0);
+
+        // Log to output channel only — tree item description shows the result
+        const { message } = formatResultMessage("workflow.run", result);
+        outputChannel.appendLine(`[${new Date().toISOString()}] ${message}`);
+      }
+    )
+  );
+
+  // Hygiene file actions — registered after tree providers so hygieneTree is in scope.
+  context.subscriptions.push(
+    vscode.commands.registerCommand("meridian.hygiene.deleteFile", async (item: any) => {
+      const filePath: string | undefined = item?.filePath;
+      if (!filePath) return;
+      const filename = nodePath.basename(filePath);
+      const confirm = await vscode.window.showWarningMessage(
+        `Delete "${filename}"? This cannot be undone.`,
+        { modal: true }, "Delete"
+      );
+      if (confirm !== "Delete") return;
+      const freshCtx = getCommandContext(context);
+      const result = await router.dispatch(
+        { name: "hygiene.cleanup", params: { files: [filePath] } }, freshCtx
+      );
+      if (result.kind === "ok") {
+        vscode.window.showInformationMessage(`Deleted: ${filename}`);
+        hygieneTree.refresh();
+      } else {
+        vscode.window.showErrorMessage(`Delete failed: ${(result as any).error.message}`);
+      }
+    }),
+    vscode.commands.registerCommand("meridian.hygiene.ignoreFile", async (item: any) => {
+      const filePath: string | undefined = item?.filePath;
+      if (!filePath) return;
+      const wsRoot = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath ?? process.cwd();
+      const ignorePath = nodePath.join(wsRoot, ".meridianignore");
+      const pattern = nodePath.relative(wsRoot, filePath);
+      fs.appendFileSync(ignorePath, `\n${pattern}\n`);
+      vscode.window.showInformationMessage(`Added to .meridianignore: ${pattern}`);
+      hygieneTree.refresh();
+    }),
+    vscode.commands.registerCommand("meridian.hygiene.reviewFile", async (item: any) => {
+      const filePath: string | undefined = item?.filePath;
+      if (!filePath) return;
+
+      let content: string;
+      try {
+        content = fs.readFileSync(filePath, "utf-8");
+      } catch {
+        vscode.window.showErrorMessage(`Could not read: ${nodePath.basename(filePath)}`);
+        return;
+      }
+
+      const model = await selectModel("hygiene");
+      if (!model) {
+        vscode.window.showErrorMessage("No language model available. Ensure GitHub Copilot is enabled.");
+        return;
+      }
+
+      const filename = nodePath.basename(filePath);
+      outputChannel.show(true);
+      outputChannel.appendLine(`\n${"─".repeat(60)}`);
+      outputChannel.appendLine(`[${new Date().toISOString()}] AI Review: ${filename}`);
+      outputChannel.appendLine("─".repeat(60));
+
+      const messages = [
+        vscode.LanguageModelChatMessage.User(
+          `You are a critical technical reviewer. Analyze this Markdown document and provide concise, actionable feedback on:\n1. Content accuracy and factual correctness\n2. Clarity and readability\n3. Completeness (gaps or missing context)\n4. Effectiveness (does it achieve its purpose?)\n5. Top 3 specific improvements\n\nDocument: ${filename}\n\`\`\`markdown\n${content}\n\`\`\``
+        ),
+      ];
+
+      try {
+        const cts = new vscode.CancellationTokenSource();
+        context.subscriptions.push(cts);
+        const response = await model.sendRequest(messages, {}, cts.token);
+        for await (const fragment of response.text) {
+          outputChannel.append(fragment);
+        }
+        outputChannel.appendLine("\n");
+      } catch (err) {
+        outputChannel.appendLine(`[Error] Review failed: ${err instanceof Error ? err.message : String(err)}`);
+      }
+    }),
+  );
+
   // Register chat participant (@meridian in Copilot Chat)
   const chatParticipant = createChatParticipant(router, cmdCtx, logger);
   context.subscriptions.push(chatParticipant);
+
+  // Register LM tools so Copilot and @meridian can invoke Meridian commands autonomously
+  const toolDisposables = registerMeridianTools(router, cmdCtx, logger);
+  context.subscriptions.push(...toolDisposables);
 
   logger.info(
     `Extension activated with ${router.listDomains().length} domains`,

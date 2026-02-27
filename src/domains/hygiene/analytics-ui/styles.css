@@ -1,0 +1,311 @@
+/* Hygiene Analytics Webview Styles */
+
+body {
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+  padding: 20px;
+  background: var(--vscode-editor-background, #1e1e1e);
+  color: var(--vscode-editor-foreground, #d4d4d4);
+  line-height: 1.6;
+}
+
+.analytics-panel {
+  max-width: 1400px;
+  margin: 0 auto;
+}
+
+/* Header */
+
+.header-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 20px;
+}
+
+h1 {
+  font-size: 22px;
+  font-weight: 600;
+  margin: 0;
+}
+
+h3 {
+  font-size: 12px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  opacity: 0.7;
+  margin: 0 0 10px;
+}
+
+.header-actions {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+button {
+  padding: 5px 14px;
+  background: var(--vscode-button-background, #0e639c);
+  color: #fff;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 12px;
+  font-family: inherit;
+  font-weight: 500;
+}
+
+button:hover {
+  background: var(--vscode-button-hoverBackground, #1177bb);
+}
+
+.btn-secondary {
+  background: transparent;
+  border: 1px solid var(--vscode-input-border, #555);
+  color: var(--vscode-editor-foreground, #d4d4d4);
+}
+
+.btn-secondary:hover {
+  background: rgba(255, 255, 255, 0.07);
+}
+
+/* Summary Cards */
+
+.summary-cards {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 10px;
+  margin-bottom: 16px;
+}
+
+.card {
+  background: var(--vscode-editor-background, #1e1e1e);
+  border: 1px solid var(--vscode-input-border, #555);
+  padding: 14px 16px;
+  border-radius: 6px;
+  text-align: center;
+  transition: border-color 0.2s;
+}
+
+.card:hover {
+  border-color: var(--vscode-focusBorder, #007acc);
+}
+
+.card h3 { margin: 0; }
+
+.card .value {
+  margin: 6px 0 0;
+  font-size: 28px;
+  font-weight: 700;
+  color: var(--vscode-terminal-ansiCyan, #17a2a2);
+  letter-spacing: -0.5px;
+}
+
+.card .sub {
+  margin: 3px 0 0;
+  font-size: 11px;
+  opacity: 0.55;
+}
+
+/* Category Distribution — thin full-width stacked bar */
+
+.category-bar-section {
+  background: var(--vscode-editor-background, #1e1e1e);
+  border: 1px solid var(--vscode-input-border, #555);
+  padding: 14px 16px 12px;
+  border-radius: 6px;
+  margin-bottom: 16px;
+}
+
+.category-bar-wrap {
+  position: relative;
+  height: 28px;
+}
+
+.category-bar-wrap canvas {
+  width: 100% !important;
+  height: 28px !important;
+}
+
+/* Custom HTML legend for the category bar */
+
+.category-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 16px;
+  margin-top: 10px;
+}
+
+.legend-item {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 11px;
+  opacity: 0.85;
+}
+
+.legend-swatch {
+  width: 10px;
+  height: 10px;
+  border-radius: 2px;
+  flex-shrink: 0;
+}
+
+/* Temporal chart — full width */
+
+.chart-section {
+  background: var(--vscode-editor-background, #1e1e1e);
+  border: 1px solid var(--vscode-input-border, #555);
+  padding: 14px 16px;
+  border-radius: 6px;
+  margin-bottom: 16px;
+}
+
+.chart-section canvas {
+  max-width: 100%;
+  height: auto !important;
+}
+
+/* Prune Candidates section */
+
+.prune-section {
+  background: var(--vscode-editor-background, #1e1e1e);
+  border: 1px solid var(--vscode-input-border, #555);
+  padding: 14px 16px;
+  border-radius: 6px;
+  margin-bottom: 16px;
+}
+
+.prune-header {
+  display: flex;
+  align-items: baseline;
+  gap: 16px;
+  margin-bottom: 10px;
+  flex-wrap: wrap;
+}
+
+.prune-criteria {
+  font-size: 11px;
+  opacity: 0.6;
+  margin: 0;
+  font-family: "Monaco", "Menlo", "Ubuntu Mono", monospace;
+}
+
+.table-scroll {
+  overflow-y: auto;
+  max-height: 220px;
+}
+
+/* All Files Table */
+
+.table-container {
+  background: var(--vscode-editor-background, #1e1e1e);
+  border: 1px solid var(--vscode-input-border, #555);
+  padding: 14px 16px;
+  border-radius: 6px;
+  overflow-x: auto;
+  margin-bottom: 24px;
+}
+
+.table-hint {
+  font-size: 10px;
+  font-weight: 400;
+  text-transform: none;
+  letter-spacing: 0;
+  opacity: 0.4;
+}
+
+/* Tables (shared) */
+
+table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12px;
+}
+
+th, td {
+  padding: 6px 8px;
+  text-align: left;
+  border-bottom: 1px solid var(--vscode-input-border, #444);
+}
+
+th {
+  font-size: 11px;
+  font-weight: 600;
+  background: rgba(255, 255, 255, 0.04);
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  cursor: pointer;
+  user-select: none;
+  white-space: nowrap;
+}
+
+th:hover { background: rgba(255, 255, 255, 0.09); }
+
+td code {
+  background: rgba(0, 0, 0, 0.25);
+  padding: 1px 5px;
+  border-radius: 3px;
+  font-family: "Monaco", "Menlo", "Ubuntu Mono", monospace;
+  font-size: 11px;
+  word-break: break-all;
+}
+
+tbody tr { transition: background-color 0.12s; }
+
+tbody tr:hover { background: rgba(255, 255, 255, 0.05); }
+
+tbody tr.prune-row { background: rgba(255, 170, 0, 0.07); }
+
+tbody tr.prune-row:hover { background: rgba(255, 170, 0, 0.13); }
+
+/* Category colour tokens */
+
+.cat-markdown { color: #4fc3f7; }
+.cat-source   { color: #81c784; }
+.cat-config   { color: #ffb74d; }
+.cat-log      { color: #ff8a65; }
+.cat-backup   { color: #ce93d8; }
+.cat-temp     { color: #ef9a9a; }
+.cat-artifact { color: #f06292; }
+.cat-other    { color: #90a4ae; }
+
+/* Prune badge */
+
+.prune-yes { color: #ffaa00; font-weight: 600; }
+.prune-no  { opacity: 0.35; }
+
+/* Sort indicator */
+
+th.sort-asc::after  { content: " ↑"; opacity: 0.7; }
+th.sort-desc::after { content: " ↓"; opacity: 0.7; }
+
+/* Clickable file paths */
+
+.path-link { cursor: pointer; }
+.path-link:hover code { background: rgba(6,182,212,0.15); color: #06b6d4; }
+
+/* Scrollbars */
+
+body {
+  scrollbar-width: thin;
+  scrollbar-color: var(--vscode-input-border, #555) transparent;
+}
+
+::-webkit-scrollbar { width: 8px; height: 8px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: var(--vscode-input-border, #555); border-radius: 4px; }
+::-webkit-scrollbar-thumb:hover { background: var(--vscode-focusBorder, #007acc); }
+
+/* Responsive */
+
+@media (max-width: 900px) {
+  .summary-cards { grid-template-columns: 1fr 1fr; }
+}
+
+@media (max-width: 600px) {
+  .summary-cards { grid-template-columns: 1fr; }
+  .header-row { flex-direction: column; align-items: flex-start; gap: 8px; }
+  .header-actions { align-self: flex-end; }
+}

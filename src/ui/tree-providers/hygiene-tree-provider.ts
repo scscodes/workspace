@@ -7,7 +7,7 @@ import { Command, CommandContext, Logger, Result, WorkspaceScan } from "../../ty
 
 type Dispatcher = (cmd: Command, ctx: CommandContext) => Promise<Result<unknown>>;
 
-type HygieneItemKind = "category" | "file";
+type HygieneItemKind = "category" | "file" | "markdownFile";
 
 class HygieneTreeItem extends vscode.TreeItem {
   constructor(
@@ -15,7 +15,8 @@ class HygieneTreeItem extends vscode.TreeItem {
     public readonly itemKind: HygieneItemKind,
     public readonly children: HygieneTreeItem[],
     collapsible: vscode.TreeItemCollapsibleState,
-    description?: string
+    description?: string,
+    public readonly filePath?: string
   ) {
     super(label, collapsible);
     this.description = description;
@@ -69,15 +70,22 @@ export class HygieneTreeProvider implements vscode.TreeDataProvider<HygieneTreeI
     }
 
     const scan = result.value as WorkspaceScan;
-    const makeFileItem = (path: string): HygieneTreeItem => {
+    const makeFileItem = (filePath: string, description?: string): HygieneTreeItem => {
       const it = new HygieneTreeItem(
-        path.split("/").pop() ?? path,
+        filePath.split("/").pop() ?? filePath,
         "file",
         [],
         vscode.TreeItemCollapsibleState.None,
-        path
+        description ?? filePath,
+        filePath
       );
       it.iconPath = new vscode.ThemeIcon("file");
+      it.tooltip = filePath;
+      it.command = {
+        command: "vscode.open",
+        title: "Open File",
+        arguments: [vscode.Uri.file(filePath)],
+      };
       return it;
     };
 
@@ -99,18 +107,40 @@ export class HygieneTreeProvider implements vscode.TreeDataProvider<HygieneTreeI
       return it;
     };
 
-    const deadItems = scan.deadFiles.map(makeFileItem);
-    const largeItems = scan.largeFiles.map((f) => {
-      const it = makeFileItem(f.path);
-      it.description = `${(f.sizeBytes / 1024).toFixed(1)} KB`;
+    const makeMarkdownItem = (filePath: string, sizeBytes: number, lineCount: number): HygieneTreeItem => {
+      const sizeKb = (sizeBytes / 1024).toFixed(1);
+      const it = new HygieneTreeItem(
+        filePath.split("/").pop() ?? filePath,
+        "markdownFile",
+        [],
+        vscode.TreeItemCollapsibleState.None,
+        `${sizeKb} KB · ${lineCount} lines`,
+        filePath
+      );
+      it.iconPath = new vscode.ThemeIcon("markdown");
+      it.tooltip = filePath;
+      it.command = {
+        command: "vscode.open",
+        title: "Open File",
+        arguments: [vscode.Uri.file(filePath)],
+      };
       return it;
-    });
-    const logItems = scan.logFiles.map(makeFileItem);
+    };
+
+    const deadItems = scan.deadFiles.map((p) => makeFileItem(p));
+    const largeItems = scan.largeFiles.map((f) =>
+      makeFileItem(f.path, `${(f.sizeBytes / 1024).toFixed(1)} KB`)
+    );
+    const logItems = scan.logFiles.map((p) => makeFileItem(p));
+    const mdItems = (scan.markdownFiles ?? []).map((f) =>
+      makeMarkdownItem(f.path, f.sizeBytes, f.lineCount)
+    );
 
     this.cached = [
       makeCategory("Dead Files", "trash", deadItems),
       makeCategory("Large Files", "database", largeItems),
       makeCategory("Log Files", "output", logItems),
+      makeCategory("Markdown Files", "markdown", mdItems),
     ];
     return this.cached;
   }

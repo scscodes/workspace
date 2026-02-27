@@ -16,6 +16,11 @@ export type TrendDirection = "up" | "stable" | "down";
 /**
  * Individual commit metric from git history
  */
+export interface CommitFileChange {
+    path: string;
+    insertions: number;
+    deletions: number;
+}
 export interface CommitMetric {
     hash: string;
     author: string;
@@ -24,6 +29,7 @@ export interface CommitMetric {
     insertions: number;
     deletions: number;
     message: string;
+    files: CommitFileChange[];
 }
 /**
  * File-level statistics aggregated over period

@@ -1,28 +1,30 @@
 "use strict";
 /**
- * Chat/Copilot Domain Handlers — local context gathering.
+ * Chat/Copilot Domain Handlers — local context gathering and task delegation.
  */
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.createContextHandler = createContextHandler;
 exports.createDelegateHandler = createDelegateHandler;
 const types_1 = require("../../types");
+// ============================================================================
+// Context Handler
+// ============================================================================
 /**
- * Example: chat.context — Gather chat context from workspace + git.
- * Used to seed copilot context window.
+ * chat.context — Gather chat context from workspace + git.
+ * Returns active file path, current git branch, and git status.
  */
 function createContextHandler(gitProvider, logger) {
-    return async (_ctx) => {
+    return async (ctx) => {
         try {
             logger.info("Gathering chat context", "ChatContextHandler");
-            // Get current git status
             const statusResult = await gitProvider.status();
             const gitStatus = statusResult.kind === "ok" ? statusResult.value : undefined;
             const chatCtx = {
-                activeFile: _ctx.activeFilePath,
+                activeFile: ctx.activeFilePath,
                 gitBranch: gitStatus?.branch,
-                gitStatus: gitStatus,
+                gitStatus,
             };
-            logger.debug(`Context gathered: file=${chatCtx.activeFile}, branch=${chatCtx.gitBranch}`, "ChatContextHandler");
+            logger.debug(`Context gathered: file=${chatCtx.activeFile ?? "none"}, branch=${chatCtx.gitBranch ?? "none"}`, "ChatContextHandler");
             return (0, types_1.success)(chatCtx);
         }
         catch (err) {
@@ -36,25 +38,43 @@ function createContextHandler(gitProvider, logger) {
     };
 }
 /**
- * Example: chat.delegate — Local task delegation (placeholder).
- * Future: could spawn workflows or local background tasks.
+ * chat.delegate — Backend command dispatcher.
+ * If params.workflow is provided, dispatches "workflow.run" via the injected dispatcher.
+ * No LLM calls, no chat UI — pure backend routing.
  */
-function createDelegateHandler(logger) {
-    return async (_ctx, params = {}) => {
+function createDelegateHandler(dispatcher, logger) {
+    return async (ctx, params) => {
         try {
-            logger.info(`Delegating local task: ${params.taskType}`, "ChatDelegateHandler");
-            // Placeholder — in real extension, could trigger workflows
-            const message = `Local task delegation: ${params.taskType} (payload: ${JSON.stringify(params.payload).substring(0, 50)}...)`;
-            logger.info(message, "ChatDelegateHandler");
+            const { task, workflow } = params;
+            if (!workflow) {
+                logger.warn(`Delegate called for task "${task}" with no workflow target`, "ChatDelegateHandler");
+                return (0, types_1.failure)({
+                    code: "CHAT_DELEGATE_NO_TARGET",
+                    message: "No delegation target: provide a workflow name",
+                    context: "chat.delegate",
+                });
+            }
+            logger.info(`Delegating task "${task}" to workflow "${workflow}"`, "ChatDelegateHandler");
+            const command = {
+                name: "workflow.run",
+                params: { name: workflow, task },
+            };
+            const result = await dispatcher(command, ctx);
+            if (result.kind === "err") {
+                logger.warn(`Workflow dispatch failed for "${workflow}": ${result.error.message}`, "ChatDelegateHandler", result.error);
+                return (0, types_1.failure)(result.error);
+            }
+            logger.info(`Workflow "${workflow}" dispatched successfully`, "ChatDelegateHandler");
             return (0, types_1.success)({
-                success: true,
-                message,
+                dispatched: true,
+                workflow,
+                message: `Workflow "${workflow}" dispatched for task "${task}"`,
             });
         }
         catch (err) {
             return (0, types_1.failure)({
                 code: "CHAT_DELEGATE_ERROR",
-                message: "Failed to delegate local task",
+                message: "Failed to delegate task",
                 details: err,
                 context: "chat.delegate",
             });

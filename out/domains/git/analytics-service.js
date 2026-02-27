@@ -6,6 +6,19 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.GitAnalyzer = void 0;
 // eslint-disable-next-line @typescript-eslint/no-var-requires
 const { execSync } = require("child_process");
+// eslint-disable-next-line @typescript-eslint/no-var-requires
+const micromatch = require("micromatch");
+/** Glob patterns to exclude from file-level analytics (build artifacts, deps) */
+const ANALYTICS_EXCLUDE = [
+    "**/node_modules/**",
+    "**/.git/**",
+    "**/out/**",
+    "**/dist/**",
+    "**/build/**",
+    "**/.vscode/**",
+    "**/*.lock",
+    "**/package-lock.json",
+];
 class GitAnalyzer {
     constructor() {
         this.cacheMap = new Map();
@@ -113,6 +126,7 @@ class GitAnalyzer {
                             filesChanged: 0,
                             insertions: 0,
                             deletions: 0,
+                            files: [],
                         };
                         commitLines.set(parts[0], []);
                     }
@@ -143,20 +157,26 @@ class GitAnalyzer {
      * Process numstat lines for a commit
      */
     aggregateCommitFiles(commit, lines) {
-        let filesChanged = 0;
+        const files = [];
         let totalInsertions = 0;
         let totalDeletions = 0;
         for (const line of lines) {
-            const parts = line.split(/\s+/);
-            if (parts.length >= 2) {
+            // numstat format: "<insertions>\t<deletions>\t<path>"
+            // Binary files use "-" for insertions/deletions
+            const parts = line.split("\t");
+            if (parts.length >= 3) {
                 const insertions = parseInt(parts[0]) || 0;
                 const deletions = parseInt(parts[1]) || 0;
-                totalInsertions += insertions;
-                totalDeletions += deletions;
-                filesChanged++;
+                const path = parts[2].trim();
+                if (path) {
+                    files.push({ path, insertions, deletions });
+                    totalInsertions += insertions;
+                    totalDeletions += deletions;
+                }
             }
         }
-        commit.filesChanged = filesChanged;
+        commit.files = files;
+        commit.filesChanged = files.length;
         commit.insertions = totalInsertions;
         commit.deletions = totalDeletions;
     }
@@ -173,31 +193,33 @@ class GitAnalyzer {
      */
     aggregateFiles(commits) {
         const fileMap = new Map();
-        // For now, use commit-level stats
-        // In a full implementation, would parse numstat per commit
-        // to get per-file stats
         for (const commit of commits) {
-            // Placeholder: would need to parse actual file paths from numstat
-            const path = `commit/${commit.hash}`;
-            if (!fileMap.has(path)) {
-                fileMap.set(path, {
-                    path,
-                    commitCount: 0,
-                    insertions: 0,
-                    deletions: 0,
-                    volatility: 0,
-                    authors: new Set(),
-                    lastModified: commit.date,
-                    risk: "low",
-                });
-            }
-            const metric = fileMap.get(path);
-            metric.commitCount++;
-            metric.insertions += commit.insertions;
-            metric.deletions += commit.deletions;
-            metric.authors.add(commit.author);
-            if (commit.date > metric.lastModified) {
-                metric.lastModified = commit.date;
+            for (const fileChange of commit.files) {
+                const { path, insertions, deletions } = fileChange;
+                // Skip build artifacts and ignored directories
+                if (micromatch.isMatch(path, ANALYTICS_EXCLUDE)) {
+                    continue;
+                }
+                if (!fileMap.has(path)) {
+                    fileMap.set(path, {
+                        path,
+                        commitCount: 0,
+                        insertions: 0,
+                        deletions: 0,
+                        volatility: 0,
+                        authors: new Set(),
+                        lastModified: commit.date,
+                        risk: "low",
+                    });
+                }
+                const metric = fileMap.get(path);
+                metric.commitCount++;
+                metric.insertions += insertions;
+                metric.deletions += deletions;
+                metric.authors.add(commit.author);
+                if (commit.date > metric.lastModified) {
+                    metric.lastModified = commit.date;
+                }
             }
         }
         // Calculate volatility and risk
@@ -371,6 +393,8 @@ class GitAnalyzer {
      * Export analytics to CSV
      */
     exportToCSV(report) {
+        // Escape double-quotes in CSV string fields per RFC 4180
+        const csvStr = (value) => `"${value.replace(/"/g, '""')}"`;
         const lines = [];
         // Summary section
         lines.push("Git Analytics Report");
@@ -387,14 +411,14 @@ class GitAnalyzer {
         lines.push("Files");
         lines.push("Path,Commits,Insertions,Deletions,Volatility,Risk,Authors,Last Modified");
         for (const file of report.files.slice(0, 100)) {
-            lines.push(`"${file.path}",${file.commitCount},${file.insertions},${file.deletions},${file.volatility.toFixed(2)},${file.risk},"${Array.from(file.authors).join(";")}",${file.lastModified.toISOString()}`);
+            lines.push(`${csvStr(file.path)},${file.commitCount},${file.insertions},${file.deletions},${file.volatility.toFixed(2)},${file.risk},${csvStr(Array.from(file.authors).join(";"))},${file.lastModified.toISOString()}`);
         }
         lines.push("");
         // Authors section
         lines.push("Authors");
         lines.push("Name,Commits,Insertions,Deletions,Files Changed,Last Active");
         for (const author of report.authors) {
-            lines.push(`"${author.name}",${author.commits},${author.insertions},${author.deletions},${author.filesChanged},${author.lastActive.toISOString()}`);
+            lines.push(`${csvStr(author.name)},${author.commits},${author.insertions},${author.deletions},${author.filesChanged},${author.lastActive.toISOString()}`);
         }
         return lines.join("\n");
     }

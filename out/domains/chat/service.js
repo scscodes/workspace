@@ -1,6 +1,6 @@
 "use strict";
 /**
- * Chat/Copilot Domain Service — local context gathering.
+ * Chat/Copilot Domain Service — local context gathering and task delegation.
  */
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.ChatDomainService = exports.CHAT_COMMANDS = void 0;
@@ -15,19 +15,15 @@ exports.CHAT_COMMANDS = [
     "chat.delegate",
 ];
 class ChatDomainService {
-    constructor(gitProvider, logger) {
+    constructor(gitProvider, logger, dispatcher) {
         this.name = "chat";
         this.handlers = {};
         this.logger = logger;
-        // Initialize handlers
         this.handlers = {
             "chat.context": (0, handlers_1.createContextHandler)(gitProvider, logger),
-            "chat.delegate": (0, handlers_1.createDelegateHandler)(logger),
+            "chat.delegate": (0, handlers_1.createDelegateHandler)(dispatcher, logger),
         };
     }
-    /**
-     * Initialize domain.
-     */
     async initialize() {
         try {
             this.logger.info("Initializing chat domain", "ChatDomainService.initialize");
@@ -42,9 +38,6 @@ class ChatDomainService {
             });
         }
     }
-    /**
-     * Cleanup.
-     */
     async teardown() {
         this.logger.debug("Tearing down chat domain", "ChatDomainService.teardown");
     }
@@ -53,7 +46,7 @@ exports.ChatDomainService = ChatDomainService;
 /**
  * Factory function — creates and returns chat domain service.
  */
-function createChatDomain(gitProvider, logger) {
-    return new ChatDomainService(gitProvider, logger);
+function createChatDomain(gitProvider, logger, dispatcher) {
+    return new ChatDomainService(gitProvider, logger, dispatcher);
 }
 //# sourceMappingURL=service.js.map

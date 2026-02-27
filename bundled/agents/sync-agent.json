@@ -1,0 +1,12 @@
+{
+  "id": "sync-agent",
+  "description": "Read-only sync: check status and pull. No commits.",
+  "version": "1.0.0",
+  "capabilities": ["git.status", "git.pull"],
+  "workflowTriggers": ["sync-repo"],
+  "metadata": {
+    "author": "meridian",
+    "schedule": "on-demand",
+    "tags": ["git", "sync", "read-only"]
+  }
+}

@@ -1,60 +1,28 @@
 /**
- * Webview Provider — Manages VS Code webview panels for analytics UI
- *
- * This is a mock implementation for the scaffold. In a real extension,
- * this would implement vscode.WebviewViewProvider and vscode.WebviewPanelSerializer.
+ * Analytics Webview Provider — opens a full-width editor panel (Welcome Screen style)
+ * displaying git analytics with Chart.js visualizations.
  */
-import { GitAnalyticsReport, AnalyticsWebviewMessage } from "../domains/git/analytics-types";
-/**
- * Mock webview panel that simulates VS Code's WebviewPanel
- */
-export interface MockWebviewPanel {
-    webview: {
-        html: string;
-        onDidReceiveMessage: (callback: (message: any) => void) => void;
-        postMessage: (message: any) => Promise<void>;
-    };
-    title: string;
-    visible: boolean;
-    onDidDispose: (callback: () => void) => void;
-}
-/**
- * Analytics Webview Provider
- * Manages the UI panel and data/message flow
- */
+import * as vscode from "vscode";
+import { GitAnalyticsReport, AnalyticsOptions } from "../domains/git/analytics-types";
+import { HygieneAnalyticsReport } from "../domains/hygiene/analytics-types";
 export declare class AnalyticsWebviewProvider {
-    private title;
-    private htmlContent;
+    private readonly extensionUri;
+    private readonly workspaceRoot;
+    private readonly onFilter;
     private panel;
-    private analytics;
-    constructor(title?: string, htmlContent?: string);
-    /**
-     * Get or create webview panel
-     */
-    getPanel(): MockWebviewPanel;
-    /**
-     * Get current analytics data
-     */
-    getAnalyticsData(): GitAnalyticsReport | null;
-    /**
-     * Create a mock webview panel
-     */
-    private createPanel;
-    /**
-     * Set analytics data and send to webview
-     */
-    setAnalyticsData(analytics: GitAnalyticsReport): void;
-    /**
-     * Handle message from webview
-     */
-    handleWebviewMessage(message: AnalyticsWebviewMessage): void;
-    /**
-     * Dispose webview
-     */
-    dispose(): void;
-    /**
-     * Get the HTML content for the webview
-     */
-    static getWebviewHTML(): string;
+    constructor(extensionUri: vscode.Uri, workspaceRoot: string, onFilter: (opts: AnalyticsOptions) => Promise<GitAnalyticsReport>);
+    openPanel(report: GitAnalyticsReport): Promise<void>;
+    private buildHtml;
+    private handleMessage;
+}
+export declare class HygieneAnalyticsWebviewProvider {
+    private readonly extensionUri;
+    private readonly onRefresh;
+    private panel;
+    private workspaceRoot;
+    constructor(extensionUri: vscode.Uri, onRefresh: () => Promise<HygieneAnalyticsReport>);
+    openPanel(report: HygieneAnalyticsReport): Promise<void>;
+    private buildHtml;
+    private handleMessage;
 }
 //# sourceMappingURL=webview-provider.d.ts.map

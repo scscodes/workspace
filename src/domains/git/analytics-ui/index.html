@@ -1,6 +1,7 @@
 <!DOCTYPE html>
 <html>
 <head>
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src https://cdn.jsdelivr.net {{WEBVIEW_CSP_SOURCE}} 'nonce-{{NONCE}}'; style-src {{WEBVIEW_CSP_SOURCE}} 'unsafe-inline'; img-src {{WEBVIEW_CSP_SOURCE}} https: data:; connect-src https:;">
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Git Analytics</title>
@@ -9,67 +10,66 @@
 </head>
 <body>
   <div class="analytics-panel">
-    <h1>📊 Git Analytics Report</h1>
-    
-    <div class="filters">
-      <label>Period: <select id="period">
-        <option value="3mo">Last 3 Months</option>
-        <option value="6mo">Last 6 Months</option>
-        <option value="12mo">Last 12 Months</option>
-      </select></label>
-      
-      <label>Author: <input id="authorFilter" placeholder="(all)" /></label>
-      
-      <label>Path: <input id="pathFilter" placeholder="src/" /></label>
-      
+
+    <div class="header-row">
+      <h1>Git Analytics — Meridian</h1>
+      <div class="header-actions">
+        <button id="exportJson" class="btn-secondary">↓ JSON</button>
+        <button id="exportCsv" class="btn-secondary">↓ CSV</button>
+      </div>
+    </div>
+
+    <div class="filter-bar">
+      <label>Period
+        <select id="period">
+          <option value="3mo">3 months</option>
+          <option value="6mo">6 months</option>
+          <option value="12mo">12 months</option>
+        </select>
+      </label>
+      <input id="authorFilter" placeholder="Author…" />
+      <input id="pathFilter" placeholder="Path pattern…" />
       <button id="applyFilters">Apply</button>
-      <button id="exportJson">Export JSON</button>
-      <button id="exportCsv">Export CSV</button>
     </div>
-    
+
     <div class="summary-cards">
-      <div class="card">
-        <h3>Commits</h3>
-        <p class="value" id="totalCommits">—</p>
-      </div>
-      <div class="card">
-        <h3>Authors</h3>
-        <p class="value" id="totalAuthors">—</p>
-      </div>
-      <div class="card">
-        <h3>Files Modified</h3>
-        <p class="value" id="totalFiles">—</p>
-      </div>
-      <div class="card">
-        <h3>Churn Rate</h3>
-        <p class="value" id="churnRate">—</p>
-      </div>
+      <div class="card"><h3>Commits / Week</h3><p class="value" id="commitFreq">—</p></div>
+      <div class="card"><h3>Avg Files / Commit</h3><p class="value" id="filesPerCommit">—</p></div>
+      <div class="card"><h3>Avg + Lines / Commit</h3><p class="value ins-val" id="avgInsPerCommit">—</p></div>
+      <div class="card"><h3>Avg − Lines / Commit</h3><p class="value del-val" id="avgDelPerCommit">—</p></div>
+      <div class="card"><h3>Churn Rate</h3><p class="value" id="churnRate">—</p></div>
     </div>
-    
+
     <div class="charts">
       <div class="chart-container">
-        <h3>📈 Commit Frequency Over Time</h3>
-        <canvas id="commitFrequencyChart"></canvas>
+        <h3>Churn by File Type</h3>
+        <canvas id="churnByTypeChart"></canvas>
       </div>
-      
       <div class="chart-container">
-        <h3>🔥 Top 10 Churn Files</h3>
-        <canvas id="churnFilesChart"></canvas>
-      </div>
-      
-      <div class="chart-container">
-        <h3>👥 Author Contributions</h3>
-        <canvas id="authorChart"></canvas>
-      </div>
-      
-      <div class="chart-container">
-        <h3>📊 Problem Files (High Volatility)</h3>
-        <canvas id="volatilityChart"></canvas>
+        <h3>Churn by Directory</h3>
+        <canvas id="churnByDirChart"></canvas>
       </div>
     </div>
-    
+
     <div class="table-container">
-      <h3>All Files</h3>
+      <h3>Recent Commits <span class="table-hint">(last 50)</span></h3>
+      <table id="commitsTable">
+        <thead>
+          <tr>
+            <th>Hash</th>
+            <th>Author</th>
+            <th>Message</th>
+            <th>+ Lines</th>
+            <th>− Lines</th>
+            <th>Churn</th>
+          </tr>
+        </thead>
+        <tbody id="commitsTableBody"></tbody>
+      </table>
+    </div>
+
+    <div class="table-container">
+      <h3>All Files <span class="table-hint">(top 50 by volatility · click path to open)</span></h3>
       <table id="filesTable">
         <thead>
           <tr>
@@ -84,8 +84,9 @@
         <tbody id="filesTableBody"></tbody>
       </table>
     </div>
+
   </div>
-  
-  <script src="script.js"></script>
+
+  <script src="script.js" nonce="{{NONCE}}"></script>
 </body>
 </html>

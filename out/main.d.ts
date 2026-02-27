@@ -2,17 +2,17 @@
  * VS Code Extension Entry Point
  * Activates domains, registers commands, sets up middleware.
  */
+import * as vscode from "vscode";
 import { CommandRouter } from "./router";
 /**
  * Activate the extension.
  * Called by VS Code when activation event is triggered.
- * In real code: export async function activate(context: vscode.ExtensionContext)
  */
-export declare function activate(_extensionPath: string): Promise<void>;
+export declare function activate(context: vscode.ExtensionContext): Promise<void>;
 /**
  * Deactivate the extension.
- * Called when extension is unloaded.
- * In real code: export function deactivate()
+ * Called when extension is unloaded. VS Code disposes subscriptions automatically;
+ * router teardown cleans up domain services.
  */
 export declare function deactivate(): Promise<void>;
 export { CommandRouter };

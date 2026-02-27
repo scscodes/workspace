@@ -11,6 +11,7 @@ import {
   GitPullResult,
   GitStageChange,
   GitFileChange,
+  RecentCommit,
   Result,
   success,
   failure,
@@ -272,6 +273,52 @@ class RealGitProvider implements GitProvider {
   ): Promise<Result<string>> {
     const args = ["diff", ...(options ?? []), revision];
     return git(args, this.workspaceRoot);
+  }
+
+  async getRecentCommits(count: number): Promise<Result<RecentCommit[]>> {
+    // Get commit headers: shortHash|subject|author
+    const logResult = await git(
+      ["log", `-${count}`, "--pretty=format:%h|%s|%an", "--numstat"],
+      this.workspaceRoot
+    );
+    if (logResult.kind === "err") return logResult;
+
+    const commits: RecentCommit[] = [];
+    let current: Partial<RecentCommit> | null = null;
+    let ins = 0;
+    let del = 0;
+
+    for (const line of logResult.value.split("\n")) {
+      if (!line.trim()) {
+        // Blank line separates commits — save current if pending
+        if (current?.shortHash) {
+          commits.push({ ...current, insertions: ins, deletions: del } as RecentCommit);
+          current = null;
+          ins = 0;
+          del = 0;
+        }
+        continue;
+      }
+
+      if (line.includes("|") && !line.match(/^\d+\t/)) {
+        // Header line: shortHash|subject|author
+        const parts = line.split("|");
+        current = { shortHash: parts[0], message: parts[1], author: parts[2] };
+        ins = 0;
+        del = 0;
+      } else if (current && line.match(/^\d+\t|^-\t/)) {
+        // Numstat line: insertions\tdeletions\tpath
+        const parts = line.split("\t");
+        ins += parseInt(parts[0] ?? "0", 10) || 0;
+        del += parseInt(parts[1] ?? "0", 10) || 0;
+      }
+    }
+    // Flush last commit (no trailing blank line)
+    if (current?.shortHash) {
+      commits.push({ ...current, insertions: ins, deletions: del } as RecentCommit);
+    }
+
+    return success(commits);
   }
 }
 

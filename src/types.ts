@@ -58,7 +58,7 @@ export type GitCommandName =
   | "git.showAnalytics"
   | "git.exportJson"
   | "git.exportCsv";
-export type HygieneCommandName = "hygiene.scan" | "hygiene.cleanup";
+export type HygieneCommandName = "hygiene.scan" | "hygiene.cleanup" | "hygiene.showAnalytics";
 export type ChatCommandName = "chat.context" | "chat.delegate";
 export type WorkflowCommandName = "workflow.list" | "workflow.run";
 export type AgentCommandName = "agent.list";
@@ -115,6 +115,7 @@ export interface GitProvider {
   getRemoteUrl(remote?: string): Promise<Result<string>>; // Get remote URL for generating diff links
   getCurrentBranch(): Promise<Result<string>>; // Get current branch name
   diff(revision: string, options?: string[]): Promise<Result<string>>; // Advanced diff with options
+  getRecentCommits(count: number): Promise<Result<RecentCommit[]>>;
 }
 
 export interface WorkspaceProvider {
@@ -158,6 +159,14 @@ export interface GitFileChange {
   deletions: number;
 }
 
+export interface RecentCommit {
+  shortHash: string;
+  message: string;
+  author: string;
+  insertions: number;
+  deletions: number;
+}
+
 export interface SmartCommitResult {
   success: boolean;
   commits: Array<{
@@ -170,10 +179,17 @@ export interface SmartCommitResult {
   message?: string;
 }
 
+export interface MarkdownFile {
+  path: string;
+  sizeBytes: number;
+  lineCount: number;
+}
+
 export interface WorkspaceScan {
   deadFiles: string[];
   largeFiles: Array<{ path: string; sizeBytes: number }>;
   logFiles: string[];
+  markdownFiles: MarkdownFile[];
 }
 
 export interface ChatContext {

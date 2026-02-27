@@ -65,8 +65,14 @@ export function formatResultMessage(
       return { level: "info", message: "Cleanup complete." };
     case "workflow.list":
       return { level: "info", message: `Found ${v.count ?? 0} workflow(s)` };
-    case "workflow.run":
-      return { level: "info", message: `Workflow finished.` };
+    case "workflow.run": {
+      const r = v as { workflowName?: string; success?: boolean; duration?: number; stepCount?: number; failedAt?: string };
+      if (r.success === false && r.failedAt) {
+        return { level: "error", message: `Workflow "${r.workflowName}" failed at step "${r.failedAt}"` };
+      }
+      const dur = r.duration ? ` in ${(r.duration / 1000).toFixed(1)}s` : "";
+      return { level: "info", message: `Workflow "${r.workflowName}" — ${r.stepCount ?? "?"} step(s)${dur}` };
+    }
     case "agent.list":
       return { level: "info", message: `Found ${v.count ?? 0} agent(s)` };
     case "chat.context":

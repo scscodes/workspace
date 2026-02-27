@@ -1,0 +1,21 @@
+{
+  "name": "scan-then-cleanup",
+  "description": "Scan workspace for hygiene issues, then run cleanup. Two-step hygiene workflow.",
+  "version": "1.0.0",
+  "steps": [
+    {
+      "id": "scan",
+      "command": "hygiene.scan",
+      "params": { "path": "." },
+      "onSuccess": "cleanup",
+      "onFailure": "exit"
+    },
+    {
+      "id": "cleanup",
+      "command": "hygiene.cleanup",
+      "params": {},
+      "onSuccess": "exit",
+      "onFailure": "exit"
+    }
+  ]
+}

@@ -13,11 +13,13 @@ const agent_registry_1 = require("../../infrastructure/agent-registry");
  */
 exports.AGENT_COMMANDS = ["agent.list"];
 class AgentDomainService {
-    constructor(logger) {
+    constructor(logger, workspaceRoot, extensionPath) {
         this.name = "agent";
         this.handlers = {};
         this.agentCache = new Map();
         this.logger = logger;
+        this.workspaceRoot = workspaceRoot;
+        this.extensionPath = extensionPath;
         // Initialize handlers
         this.handlers = {
             "agent.list": (0, handlers_1.createListAgentsHandler)(this.logger, () => this.discoverAgents()),
@@ -50,10 +52,10 @@ class AgentDomainService {
         this.agentCache.clear();
     }
     /**
-     * Discover agents from .vscode/agents/
+     * Discover agents from bundled and workspace locations.
      */
     discoverAgents() {
-        this.agentCache = (0, agent_registry_1.loadAgents)();
+        this.agentCache = (0, agent_registry_1.loadAgents)(this.workspaceRoot, this.extensionPath);
         return this.agentCache;
     }
 }
@@ -61,7 +63,7 @@ exports.AgentDomainService = AgentDomainService;
 /**
  * Factory function — creates and returns agent domain service.
  */
-function createAgentDomain(logger) {
-    return new AgentDomainService(logger);
+function createAgentDomain(logger, workspaceRoot, extensionPath) {
+    return new AgentDomainService(logger, workspaceRoot, extensionPath);
 }
 //# sourceMappingURL=service.js.map

@@ -2,6 +2,7 @@
  * Workflow Domain Service — discover, manage, and execute workflows.
  */
 
+import path from "node:path";
 import {
   DomainService,
   WorkflowCommandName,
@@ -39,10 +40,19 @@ export class WorkflowDomainService implements DomainService {
   private workflowCache: Map<string, WorkflowDefinition> = new Map();
   private workflowEngine: WorkflowEngine | null = null;
   private stepRunner: StepRunner | null = null;
+  private workspaceRoot?: string;
+  private extensionPath?: string;
 
-  constructor(logger: Logger, stepRunner?: StepRunner) {
+  constructor(
+    logger: Logger,
+    stepRunner?: StepRunner,
+    workspaceRoot?: string,
+    extensionPath?: string
+  ) {
     this.logger = logger;
     this.stepRunner = stepRunner || this.createDefaultStepRunner();
+    this.workspaceRoot = workspaceRoot;
+    this.extensionPath = extensionPath;
 
     // Initialize handlers
     this.handlers = {
@@ -96,12 +106,38 @@ export class WorkflowDomainService implements DomainService {
   }
 
   /**
-   * Discover workflows from .vscode/workflows/
+   * Discover workflows from bundled and workspace locations.
+   * Workspace workflows override bundled ones (same name).
    */
   private discoverWorkflows(): Map<string, WorkflowDefinition> {
     this.workflowCache.clear();
 
-    const workflowsDir = getWorkflowsDir();
+    // Load bundled workflows first
+    if (this.extensionPath) {
+      const bundledDir = path.join(
+        this.extensionPath,
+        "bundled",
+        "workflows"
+      );
+      try {
+        const files = listJsonFiles(bundledDir);
+        for (const filePath of files) {
+          const data = readJsonFile<WorkflowDefinition>(filePath);
+          if (data && validateWorkflowDefinition(data)) {
+            this.workflowCache.set(data.name, data);
+          }
+        }
+      } catch {
+        // Missing bundled directory is not fatal
+        this.logger.debug(
+          `Bundled workflows directory not found: ${bundledDir}`,
+          "WorkflowDomainService.discoverWorkflows"
+        );
+      }
+    }
+
+    // Load workspace workflows (override bundled)
+    const workflowsDir = getWorkflowsDir(this.workspaceRoot);
     const files = listJsonFiles(workflowsDir);
 
     for (const filePath of files) {
@@ -203,7 +239,9 @@ export function validateWorkflowDefinition(
  */
 export function createWorkflowDomain(
   logger: Logger,
-  stepRunner?: StepRunner
+  stepRunner?: StepRunner,
+  workspaceRoot?: string,
+  extensionPath?: string
 ): WorkflowDomainService {
-  return new WorkflowDomainService(logger, stepRunner);
+  return new WorkflowDomainService(logger, stepRunner, workspaceRoot, extensionPath);
 }

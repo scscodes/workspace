@@ -2,6 +2,7 @@
  * Agent Registry — discover, load, and validate agent definitions from .vscode/agents/
  */
 
+import * as path from "path";
 import { AgentDefinition } from "../types";
 import {
   getAgentsDir,
@@ -49,13 +50,30 @@ export function validateAgentDefinition(data: unknown): data is AgentDefinition 
 }
 
 /**
- * Load agent definitions from .vscode/agents/
+ * Load agent definitions from bundled and workspace locations.
+ * Workspace definitions override bundled ones (same id).
  */
-export function loadAgents(workspaceRoot?: string): Map<string, AgentDefinition> {
-  const agentsDir = getAgentsDir(workspaceRoot);
+export function loadAgents(
+  workspaceRoot?: string,
+  extensionPath?: string
+): Map<string, AgentDefinition> {
   const agents = new Map<string, AgentDefinition>();
 
-  const files = listJsonFiles(agentsDir);
+  // Load bundled agents first
+  if (extensionPath) {
+    const bundledDir = path.join(extensionPath, "bundled", "agents");
+    const files = listJsonFiles(bundledDir);
+    for (const filePath of files) {
+      const data = readJsonFile(filePath);
+      if (validateAgentDefinition(data)) {
+        agents.set(data.id, data);
+      }
+    }
+  }
+
+  // Load workspace agents (overrides bundled)
+  const workspaceDir = getAgentsDir(workspaceRoot);
+  const files = listJsonFiles(workspaceDir);
   for (const filePath of files) {
     const data = readJsonFile(filePath);
     if (validateAgentDefinition(data)) {
@@ -71,17 +89,18 @@ export function loadAgents(workspaceRoot?: string): Map<string, AgentDefinition>
  */
 export function getAgent(
   id: string,
-  workspaceRoot?: string
+  workspaceRoot?: string,
+  extensionPath?: string
 ): AgentDefinition | null {
-  const agents = loadAgents(workspaceRoot);
+  const agents = loadAgents(workspaceRoot, extensionPath);
   return agents.get(id) || null;
 }
 
 /**
  * List all agent IDs.
  */
-export function listAgents(workspaceRoot?: string): string[] {
-  const agents = loadAgents(workspaceRoot);
+export function listAgents(workspaceRoot?: string, extensionPath?: string): string[] {
+  const agents = loadAgents(workspaceRoot, extensionPath);
   return Array.from(agents.keys()).sort();
 }
 
@@ -90,9 +109,10 @@ export function listAgents(workspaceRoot?: string): string[] {
  */
 export function findAgentsByCapability(
   commandName: string,
-  workspaceRoot?: string
+  workspaceRoot?: string,
+  extensionPath?: string
 ): AgentDefinition[] {
-  const agents = loadAgents(workspaceRoot);
+  const agents = loadAgents(workspaceRoot, extensionPath);
   return Array.from(agents.values()).filter((agent) =>
     agent.capabilities.includes(commandName as any)
   );
@@ -103,9 +123,10 @@ export function findAgentsByCapability(
  */
 export function findAgentsByWorkflowTrigger(
   workflowName: string,
-  workspaceRoot?: string
+  workspaceRoot?: string,
+  extensionPath?: string
 ): AgentDefinition[] {
-  const agents = loadAgents(workspaceRoot);
+  const agents = loadAgents(workspaceRoot, extensionPath);
   return Array.from(agents.values()).filter((agent) =>
     agent.workflowTriggers?.includes(workflowName)
   );

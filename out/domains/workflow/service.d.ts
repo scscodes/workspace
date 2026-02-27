@@ -14,7 +14,9 @@ export declare class WorkflowDomainService implements DomainService {
     private workflowCache;
     private workflowEngine;
     private stepRunner;
-    constructor(logger: Logger, stepRunner?: StepRunner);
+    private workspaceRoot?;
+    private extensionPath?;
+    constructor(logger: Logger, stepRunner?: StepRunner, workspaceRoot?: string, extensionPath?: string);
     /**
      * Initialize domain — discover workflows.
      */
@@ -24,7 +26,8 @@ export declare class WorkflowDomainService implements DomainService {
      */
     teardown(): Promise<void>;
     /**
-     * Discover workflows from .vscode/workflows/
+     * Discover workflows from bundled and workspace locations.
+     * Workspace workflows override bundled ones (same name).
      */
     private discoverWorkflows;
     /**
@@ -47,5 +50,5 @@ export declare function validateWorkflowDefinition(data: unknown): data is Workf
 /**
  * Factory function — creates and returns workflow domain service.
  */
-export declare function createWorkflowDomain(logger: Logger, stepRunner?: StepRunner): WorkflowDomainService;
+export declare function createWorkflowDomain(logger: Logger, stepRunner?: StepRunner, workspaceRoot?: string, extensionPath?: string): WorkflowDomainService;
 //# sourceMappingURL=service.d.ts.map

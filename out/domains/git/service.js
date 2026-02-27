@@ -317,8 +317,8 @@ class InboundAnalyzer {
                 });
             }
             const upstream = `origin/${branch}`;
-            // 3. Get inbound changes
-            const inboundDiffResult = await this.gitProvider.diff(`HEAD..${upstream}`);
+            // 3. Get inbound changes (name-status format: "<status>\t<path>" per line)
+            const inboundDiffResult = await this.gitProvider.diff(`HEAD..${upstream}`, ["--name-status"]);
             if (inboundDiffResult.kind === "err") {
                 return inboundDiffResult;
             }
@@ -348,20 +348,14 @@ class InboundAnalyzer {
                     diffLink: `View with: git diff HEAD..origin/${branch}`,
                 });
             }
-            // 4. Get local changes
-            const localDiffResult = await this.gitProvider.getDiff();
-            if (localDiffResult.kind === "err") {
-                return localDiffResult;
+            // 4. Get local changes via structured API (returns GitFileChange[] with status codes)
+            const localChangesResult = await this.gitProvider.getAllChanges();
+            if (localChangesResult.kind === "err") {
+                return localChangesResult;
             }
-            const localDiff = localDiffResult.value;
-            // Guard: validate localDiff
-            if (localDiff === null || localDiff === undefined) {
-                this.logger.warn("Local diff is null; treating as no local changes", "InboundAnalyzer.analyze");
-                // Non-fatal: continue with empty local diff
-            }
-            // 5. Parse changes into maps (parseGitDiff handles null safely)
+            // 5. Parse inbound diff (name-status format) and convert local changes to map
             const inboundChanges = this.parseGitDiff(inboundDiff || "");
-            const localChanges = this.parseGitDiff(localDiff || "");
+            const localChanges = new Map(localChangesResult.value.map((c) => [c.path, c.status]));
             // Guard: validate parsed changes
             if (!inboundChanges || inboundChanges.size === 0) {
                 this.logger.warn("No inbound changes parsed from diff", "InboundAnalyzer.analyze");
@@ -422,8 +416,13 @@ class InboundAnalyzer {
                     this.logger.debug(`Skipping malformed diff line: ${line}`, "InboundAnalyzer.parseGitDiff");
                     continue;
                 }
-                const status = parts[0];
-                const path = parts.slice(1).join(" ");
+                // Normalize status: R100 -> R, C100 -> C, etc.
+                const rawStatus = parts[0];
+                const status = rawStatus.charAt(0);
+                // For renames, git outputs: R<score>\t<old-path>\t<new-path>; use new path
+                const path = rawStatus.startsWith("R") && parts.length >= 3
+                    ? parts[2]
+                    : parts.slice(1).join(" ");
                 // Validate path is not empty after parsing
                 if (!path || !status) {
                     this.logger.debug("Skipping line with empty status or path", "InboundAnalyzer.parseGitDiff");

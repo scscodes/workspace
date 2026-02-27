@@ -25,6 +25,7 @@ export const COMMAND_NAMES = {
   HYGIENE: {
     SCAN: "hygiene.scan" as const,
     CLEANUP: "hygiene.cleanup" as const,
+    SHOW_ANALYTICS: "hygiene.showAnalytics" as const,
   },
   // Chat domain
   CHAT: {
@@ -178,12 +179,30 @@ export const HYGIENE_SETTINGS = {
 
   /** File patterns to exclude from hygiene checks */
   EXCLUDE_PATTERNS: [
+    // VCS + editor
     "**/node_modules/**",
     "**/.git/**",
+    "**/.vscode/**",
+    "**/.idea/**",
+    // Build / output
     "**/dist/**",
     "**/build/**",
-    "**/.vscode/**",
     "**/out/**",
+    "**/bundled/**",
+    // Python runtime & tooling
+    "**/.venv/**",
+    "**/venv/**",
+    "**/__pycache__/**",
+    "**/.pytest_cache/**",
+    "**/.mypy_cache/**",
+    "**/.ruff_cache/**",
+    "**/.tox/**",
+    "**/.eggs/**",
+    "**/*.egg-info/**",
+    // JS/TS coverage & caches
+    "**/coverage/**",
+    "**/.nyc_output/**",
+    "**/.cache/**",
   ] as const,
 
   /** Log file patterns to detect */
@@ -192,6 +211,34 @@ export const HYGIENE_SETTINGS = {
   /** Temporary file patterns */
   TEMP_FILE_PATTERNS: ["*.tmp", "*.temp", "*.bak", "*~"] as const,
 } as const;
+
+// ============================================================================
+// Hygiene Analytics — lighter exclusion set for the analytics scan.
+// Unlike HYGIENE_SETTINGS.EXCLUDE_PATTERNS, this intentionally keeps
+// artifact dirs (dist/, build/, out/, coverage/, .cache/, .next/) so they
+// are surfaced and can be flagged as prune candidates.
+// Gitignore patterns are NOT applied to analytics either.
+// ============================================================================
+
+export const HYGIENE_ANALYTICS_EXCLUDE_PATTERNS = [
+  // VCS + editor noise — never analytically useful
+  "**/node_modules/**",
+  "**/.git/**",
+  "**/.vscode/**",
+  "**/.idea/**",
+  // Python runtime environments — can be enormous
+  "**/.venv/**",
+  "**/venv/**",
+  "**/.pytest_cache/**",
+  "**/.mypy_cache/**",
+  "**/.ruff_cache/**",
+  "**/.tox/**",
+  "**/.eggs/**",
+  "**/*.egg-info/**",
+  // JS package manager internals
+  "**/.yarn/**",
+  "**/.pnpm-store/**",
+] as const;
 
 // ============================================================================
 // Chat Configuration

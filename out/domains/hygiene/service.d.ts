@@ -2,6 +2,7 @@
  * Hygiene Domain Service — workspace cleanup and maintenance.
  */
 import { DomainService, HygieneCommandName, Handler, Logger, WorkspaceProvider, Result } from "../../types";
+import { HygieneAnalyzer } from "./analytics-service";
 /**
  * Hygiene domain commands.
  */
@@ -9,6 +10,7 @@ export declare const HYGIENE_COMMANDS: HygieneCommandName[];
 export declare class HygieneDomainService implements DomainService {
     readonly name = "hygiene";
     handlers: Partial<Record<HygieneCommandName, Handler>>;
+    analyzer: HygieneAnalyzer;
     private logger;
     private scanIntervalMs;
     constructor(workspaceProvider: WorkspaceProvider, logger: Logger);

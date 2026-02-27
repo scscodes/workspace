@@ -36,8 +36,72 @@
         "id": "meridian",
         "name": "meridian",
         "fullName": "Meridian",
-        "description": "Git, hygiene, workflow, and agent assistant",
-        "isDefault": false
+        "description": "Git, hygiene, workflow, and agent assistant for your workspace",
+        "isDefault": false,
+        "commands": [
+          { "name": "status",    "description": "Show current git branch and file change counts" },
+          { "name": "scan",      "description": "Scan workspace for hygiene issues (large files, dead files, logs)" },
+          { "name": "workflows", "description": "List all available Meridian workflows" },
+          { "name": "agents",    "description": "List all available Meridian agents and their capabilities" },
+          { "name": "analytics", "description": "Open the Git Analytics report" },
+          { "name": "context",   "description": "Show workspace context: branch, active file, and available commands" }
+        ]
+      }
+    ],
+    "languageModelTools": [
+      {
+        "name": "meridian_git_status",
+        "displayName": "Meridian: Git Status",
+        "modelDescription": "Check the current git branch, whether the working tree is dirty, and counts of staged, unstaged, and untracked files.",
+        "inputSchema": { "type": "object", "properties": {} }
+      },
+      {
+        "name": "meridian_git_smart_commit",
+        "displayName": "Meridian: Smart Commit",
+        "modelDescription": "Automatically group staged file changes by semantic type, suggest commit messages, and commit all groups in batch.",
+        "inputSchema": { "type": "object", "properties": {} }
+      },
+      {
+        "name": "meridian_git_analyze_inbound",
+        "displayName": "Meridian: Analyze Inbound Changes",
+        "modelDescription": "Fetch and analyze incoming changes from the remote branch, detecting conflicts and summarizing diffs before merging.",
+        "inputSchema": { "type": "object", "properties": {} }
+      },
+      {
+        "name": "meridian_hygiene_scan",
+        "displayName": "Meridian: Hygiene Scan",
+        "modelDescription": "Scan the workspace for hygiene issues such as unused files, dead code, and oversized log files.",
+        "inputSchema": { "type": "object", "properties": {} }
+      },
+      {
+        "name": "meridian_workflow_run",
+        "displayName": "Meridian: Run Workflow",
+        "modelDescription": "Execute a named workflow from the .vscode/agents/ directory. Use meridian_workflow_list first if you don't know the workflow name.",
+        "inputSchema": {
+          "type": "object",
+          "required": ["name"],
+          "properties": {
+            "name": {
+              "type": "string",
+              "description": "The exact name of the workflow to run"
+            }
+          }
+        }
+      },
+      {
+        "name": "meridian_git_show_analytics",
+        "displayName": "Meridian: Git Analytics",
+        "modelDescription": "Generate a git analytics report covering commit frequency, code churn, author contributions, and file volatility metrics.",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "period": {
+              "type": "string",
+              "enum": ["3mo", "6mo", "12mo"],
+              "description": "Time period for the analytics report. Defaults to 3mo."
+            }
+          }
+        }
       }
     ],
     "commands": [
@@ -72,6 +136,21 @@
         "category": "Hygiene"
       },
       {
+        "command": "meridian.hygiene.deleteFile",
+        "title": "Hygiene: Delete File",
+        "category": "Hygiene"
+      },
+      {
+        "command": "meridian.hygiene.ignoreFile",
+        "title": "Hygiene: Ignore File",
+        "category": "Hygiene"
+      },
+      {
+        "command": "meridian.hygiene.reviewFile",
+        "title": "Hygiene: Review with AI",
+        "category": "Hygiene"
+      },
+      {
         "command": "meridian.chat.context",
         "title": "Chat: Get Context",
         "category": "Chat"
@@ -90,6 +169,48 @@
         "command": "meridian.agent.list",
         "title": "Agent: List All",
         "category": "Agent"
+      },
+      {
+        "command": "meridian.git.refresh",
+        "title": "Git: Refresh View",
+        "category": "Git"
+      },
+      {
+        "command": "meridian.hygiene.refresh",
+        "title": "Hygiene: Refresh View",
+        "category": "Hygiene"
+      },
+      {
+        "command": "meridian.workflow.refresh",
+        "title": "Workflow: Refresh View",
+        "category": "Workflow"
+      },
+      {
+        "command": "meridian.agent.refresh",
+        "title": "Agent: Refresh View",
+        "category": "Agent"
+      },
+      {
+        "command": "meridian.git.showAnalytics",
+        "title": "Git: Show Analytics",
+        "icon": "$(graph)",
+        "category": "Git"
+      },
+      {
+        "command": "meridian.git.exportJson",
+        "title": "Git: Export Analytics JSON",
+        "category": "Git"
+      },
+      {
+        "command": "meridian.git.exportCsv",
+        "title": "Git: Export Analytics CSV",
+        "category": "Git"
+      },
+      {
+        "command": "meridian.hygiene.showAnalytics",
+        "title": "Hygiene: Show Analytics",
+        "icon": "$(graph)",
+        "category": "Hygiene"
       }
     ],
     "configuration": {
@@ -120,13 +241,83 @@
           ],
           "default": "info",
           "description": "Logger output level"
+        },
+        "meridian.model.default": {
+          "type": "string",
+          "default": "gpt-4o",
+          "description": "Default language model family for all Meridian AI features (e.g. gpt-4o, claude-3-5-sonnet). Used when no domain-specific override is set."
+        },
+        "meridian.model.hygiene": {
+          "type": "string",
+          "default": "",
+          "description": "Language model family for hygiene domain (markdown review). Empty = inherits meridian.model.default."
+        },
+        "meridian.model.git": {
+          "type": "string",
+          "default": "",
+          "description": "Language model family for git domain (commit messages, diff analysis). Empty = inherits meridian.model.default."
+        },
+        "meridian.model.chat": {
+          "type": "string",
+          "default": "",
+          "description": "Language model family for @meridian chat participant direct LLM calls. Empty = inherits meridian.model.default."
+        },
+        "meridian.hygiene.prune.minAgeDays": {
+          "type": "number",
+          "default": 30,
+          "minimum": 0,
+          "description": "Minimum file age in days for a file to be considered a prune candidate."
+        },
+        "meridian.hygiene.prune.maxSizeMB": {
+          "type": "number",
+          "default": 1,
+          "minimum": 0,
+          "description": "Files larger than this size (MB) are flagged as prune candidates when also older than minAgeDays."
+        },
+        "meridian.hygiene.prune.minLineCount": {
+          "type": "number",
+          "default": 0,
+          "minimum": 0,
+          "description": "Flag files with this many lines or more as prune candidates (when also older than minAgeDays). Set to 0 to disable."
+        },
+        "meridian.hygiene.prune.categories": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "enum": ["markdown", "log", "config", "backup", "temp", "source", "artifact", "other"]
+          },
+          "default": ["backup", "temp", "log", "artifact"],
+          "description": "File categories that are automatically flagged as prune candidates when older than minAgeDays."
         }
       }
+    },
+    "menus": {
+      "view/title": [
+        { "command": "meridian.git.refresh",       "when": "view == meridian.git.view",      "group": "navigation" },
+        { "command": "meridian.hygiene.refresh",   "when": "view == meridian.hygiene.view",  "group": "navigation" },
+        { "command": "meridian.workflow.refresh",  "when": "view == meridian.workflow.view", "group": "navigation" },
+        { "command": "meridian.agent.refresh",     "when": "view == meridian.agent.view",    "group": "navigation" },
+        { "command": "meridian.git.showAnalytics",     "when": "view == meridian.git.view",     "group": "navigation" },
+        { "command": "meridian.hygiene.showAnalytics", "when": "view == meridian.hygiene.view", "group": "navigation" }
+      ],
+      "view/item/context": [
+        { "command": "meridian.git.smartCommit", "when": "view == meridian.git.view && viewItem == branch",       "group": "git@1" },
+        { "command": "meridian.git.pull",        "when": "view == meridian.git.view && viewItem == branch",       "group": "git@2" },
+        { "command": "meridian.hygiene.cleanup",    "when": "view == meridian.hygiene.view && viewItem =~ /file/", "group": "hygiene@1" },
+        { "command": "meridian.hygiene.deleteFile", "when": "view == meridian.hygiene.view && viewItem =~ /file/", "group": "hygiene@2" },
+        { "command": "meridian.hygiene.ignoreFile", "when": "view == meridian.hygiene.view && viewItem =~ /file/", "group": "hygiene@3" },
+        { "command": "meridian.hygiene.reviewFile", "when": "view == meridian.hygiene.view && viewItem == markdownFile", "group": "hygiene@4" },
+        { "command": "meridian.workflow.run",    "when": "view == meridian.workflow.view && viewItem == workflow", "group": "workflow@1" }
+      ],
+      "view/item/inline": [
+        { "command": "meridian.workflow.run",      "when": "view == meridian.workflow.view && viewItem == workflow",  "group": "inline" },
+        { "command": "meridian.git.showAnalytics", "when": "view == meridian.git.view && viewItem == branch",         "group": "inline" }
+      ]
     }
   },
   "scripts": {
     "vscode:prepublish": "npm run compile",
-    "compile": "tsc -p ./ && cp -r media out/media 2>/dev/null || true",
+    "compile": "tsc -p ./ && cp -r media out/media 2>/dev/null || true && cp -r bundled out/bundled 2>/dev/null || true && mkdir -p out/domains/git && rm -rf out/domains/git/analytics-ui && cp -r src/domains/git/analytics-ui out/domains/git/analytics-ui && mkdir -p out/domains/hygiene && rm -rf out/domains/hygiene/analytics-ui && cp -r src/domains/hygiene/analytics-ui out/domains/hygiene/analytics-ui",
     "watch": "tsc -watch -p ./",
     "pretest": "npm run compile",
     "test": "vitest",

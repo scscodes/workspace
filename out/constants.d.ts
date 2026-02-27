@@ -18,6 +18,7 @@ export declare const COMMAND_NAMES: {
     readonly HYGIENE: {
         readonly SCAN: "hygiene.scan";
         readonly CLEANUP: "hygiene.cleanup";
+        readonly SHOW_ANALYTICS: "hygiene.showAnalytics";
     };
     readonly CHAT: {
         readonly CONTEXT: "chat.context";
@@ -109,12 +110,13 @@ export declare const HYGIENE_SETTINGS: {
     /** Maximum file size to check in bytes (10 MB) */
     readonly MAX_FILE_SIZE_BYTES: number;
     /** File patterns to exclude from hygiene checks */
-    readonly EXCLUDE_PATTERNS: readonly ["**/node_modules/**", "**/.git/**", "**/dist/**", "**/build/**", "**/.vscode/**", "**/out/**"];
+    readonly EXCLUDE_PATTERNS: readonly ["**/node_modules/**", "**/.git/**", "**/.vscode/**", "**/.idea/**", "**/dist/**", "**/build/**", "**/out/**", "**/bundled/**", "**/.venv/**", "**/venv/**", "**/__pycache__/**", "**/.pytest_cache/**", "**/.mypy_cache/**", "**/.ruff_cache/**", "**/.tox/**", "**/.eggs/**", "**/*.egg-info/**", "**/coverage/**", "**/.nyc_output/**", "**/.cache/**"];
     /** Log file patterns to detect */
     readonly LOG_FILE_PATTERNS: readonly ["*.log", "debug.log", "*-error.log"];
     /** Temporary file patterns */
     readonly TEMP_FILE_PATTERNS: readonly ["*.tmp", "*.temp", "*.bak", "*~"];
 };
+export declare const HYGIENE_ANALYTICS_EXCLUDE_PATTERNS: readonly ["**/node_modules/**", "**/.git/**", "**/.vscode/**", "**/.idea/**", "**/.venv/**", "**/venv/**", "**/.pytest_cache/**", "**/.mypy_cache/**", "**/.ruff_cache/**", "**/.tox/**", "**/.eggs/**", "**/*.egg-info/**", "**/.yarn/**", "**/.pnpm-store/**"];
 export declare const CHAT_SETTINGS: {
     /** Default LLM model for chat operations */
     readonly DEFAULT_MODEL: "gpt-4";

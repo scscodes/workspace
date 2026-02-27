@@ -1,6 +1,7 @@
 /**
  * Workflow Tree Provider — lists available workflows in the sidebar.
  * Each item has an inline "run" command for one-click execution.
+ * Supports running/last-run state indicators per workflow.
  */
 
 import * as vscode from "vscode";
@@ -32,7 +33,12 @@ export class WorkflowTreeProvider implements vscode.TreeDataProvider<WorkflowTre
   private _onDidChangeTreeData = new vscode.EventEmitter<WorkflowTreeItem | undefined | null | void>();
   readonly onDidChangeTreeData = this._onDidChangeTreeData.event;
 
-  private cached: WorkflowTreeItem[] | null = null;
+  // Cache workflow data separately from tree items so state changes rebuild items cheaply
+  private cachedWorkflows: WorkflowSummary[] | null = null;
+
+  // Per-workflow execution state
+  private runningSet = new Set<string>();
+  private lastRuns = new Map<string, { success: boolean; duration: number }>();
 
   constructor(
     private readonly dispatch: Dispatcher,
@@ -41,7 +47,20 @@ export class WorkflowTreeProvider implements vscode.TreeDataProvider<WorkflowTre
   ) {}
 
   refresh(): void {
-    this.cached = null;
+    this.cachedWorkflows = null;
+    this._onDidChangeTreeData.fire();
+  }
+
+  /** Called by main.ts when a workflow starts executing. */
+  setRunning(name: string): void {
+    this.runningSet.add(name);
+    this._onDidChangeTreeData.fire();
+  }
+
+  /** Called by main.ts when a workflow finishes. Updates description with result. */
+  setLastRun(name: string, success: boolean, duration: number): void {
+    this.runningSet.delete(name);
+    this.lastRuns.set(name, { success, duration });
     this._onDidChangeTreeData.fire();
   }
 
@@ -55,24 +74,25 @@ export class WorkflowTreeProvider implements vscode.TreeDataProvider<WorkflowTre
   }
 
   private async getRootItems(): Promise<WorkflowTreeItem[]> {
-    if (this.cached) return this.cached;
-
-    const result = await this.dispatch({ name: "workflow.list", params: {} }, this.ctx);
-    if (result.kind === "err") {
-      this.logger.warn("WorkflowTreeProvider: list failed", "WorkflowTreeProvider", result.error);
-      const err = new WorkflowTreeItem(
-        "Failed to load workflows",
-        "root",
-        vscode.TreeItemCollapsibleState.None,
-        result.error.code
-      );
-      err.iconPath = new vscode.ThemeIcon("error");
-      return [err];
+    // Fetch workflow list only if not cached (refresh() clears this)
+    if (!this.cachedWorkflows) {
+      const result = await this.dispatch({ name: "workflow.list", params: {} }, this.ctx);
+      if (result.kind === "err") {
+        this.logger.warn("WorkflowTreeProvider: list failed", "WorkflowTreeProvider", result.error);
+        const err = new WorkflowTreeItem(
+          "Failed to load workflows",
+          "root",
+          vscode.TreeItemCollapsibleState.None,
+          result.error.code
+        );
+        err.iconPath = new vscode.ThemeIcon("error");
+        return [err];
+      }
+      const { workflows } = result.value as { workflows: WorkflowSummary[]; count: number };
+      this.cachedWorkflows = workflows;
     }
 
-    const { workflows } = result.value as { workflows: WorkflowSummary[]; count: number };
-
-    if (workflows.length === 0) {
+    if (this.cachedWorkflows.length === 0) {
       const empty = new WorkflowTreeItem(
         "No workflows found",
         "root",
@@ -82,14 +102,25 @@ export class WorkflowTreeProvider implements vscode.TreeDataProvider<WorkflowTre
       return [empty];
     }
 
-    this.cached = workflows.map((w) => {
+    // Build items fresh each time so running/last-run state is always current
+    return this.cachedWorkflows.map((w) => {
+      const isRunning = this.runningSet.has(w.name);
+      const lastRun   = this.lastRuns.get(w.name);
+
+      const description = isRunning
+        ? "running\u2026"
+        : lastRun
+          ? `${lastRun.success ? "\u2713" : "\u2717"} ${(lastRun.duration / 1000).toFixed(1)}s`
+          : (w.description ?? `${w.stepCount} step(s)`);
+
       const it = new WorkflowTreeItem(
         w.name,
         "workflow",
         vscode.TreeItemCollapsibleState.None,
-        w.description ?? `${w.stepCount} step(s)`
+        description
       );
-      it.iconPath = new vscode.ThemeIcon("play");
+      // "loading~spin" animates in TreeItem iconPath (unlike description which is plain text)
+      it.iconPath = new vscode.ThemeIcon(isRunning ? "loading~spin" : "play");
       it.command = {
         command: "meridian.workflow.run",
         title: "Run Workflow",
@@ -97,6 +128,5 @@ export class WorkflowTreeProvider implements vscode.TreeDataProvider<WorkflowTre
       };
       return it;
     });
-    return this.cached;
   }
 }

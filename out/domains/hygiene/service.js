@@ -7,12 +7,15 @@ exports.HygieneDomainService = exports.HYGIENE_COMMANDS = void 0;
 exports.createHygieneDomain = createHygieneDomain;
 const types_1 = require("../../types");
 const handlers_1 = require("./handlers");
+const analytics_service_1 = require("./analytics-service");
+const analytics_handler_1 = require("./analytics-handler");
 /**
  * Hygiene domain commands.
  */
 exports.HYGIENE_COMMANDS = [
     "hygiene.scan",
     "hygiene.cleanup",
+    "hygiene.showAnalytics",
 ];
 class HygieneDomainService {
     constructor(workspaceProvider, logger) {
@@ -20,10 +23,12 @@ class HygieneDomainService {
         this.handlers = {};
         this.scanIntervalMs = 60 * 60 * 1000; // 1 hour default
         this.logger = logger;
+        this.analyzer = new analytics_service_1.HygieneAnalyzer();
         // Initialize handlers
         this.handlers = {
             "hygiene.scan": (0, handlers_1.createScanHandler)(workspaceProvider, logger),
             "hygiene.cleanup": (0, handlers_1.createCleanupHandler)(workspaceProvider, logger),
+            "hygiene.showAnalytics": (0, analytics_handler_1.createShowHygieneAnalyticsHandler)(this.analyzer, logger),
         };
     }
     /**

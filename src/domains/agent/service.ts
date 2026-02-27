@@ -25,10 +25,14 @@ export class AgentDomainService implements DomainService {
 
   handlers: Partial<Record<AgentCommandName, Handler>> = {};
   private logger: Logger;
+  private workspaceRoot?: string;
+  private extensionPath?: string;
   private agentCache: Map<string, AgentDefinition> = new Map();
 
-  constructor(logger: Logger) {
+  constructor(logger: Logger, workspaceRoot?: string, extensionPath?: string) {
     this.logger = logger;
+    this.workspaceRoot = workspaceRoot;
+    this.extensionPath = extensionPath;
 
     // Initialize handlers
     this.handlers = {
@@ -77,10 +81,10 @@ export class AgentDomainService implements DomainService {
   }
 
   /**
-   * Discover agents from .vscode/agents/
+   * Discover agents from bundled and workspace locations.
    */
   private discoverAgents(): Map<string, AgentDefinition> {
-    this.agentCache = loadAgents();
+    this.agentCache = loadAgents(this.workspaceRoot, this.extensionPath);
     return this.agentCache;
   }
 }
@@ -88,6 +92,10 @@ export class AgentDomainService implements DomainService {
 /**
  * Factory function — creates and returns agent domain service.
  */
-export function createAgentDomain(logger: Logger): AgentDomainService {
-  return new AgentDomainService(logger);
+export function createAgentDomain(
+  logger: Logger,
+  workspaceRoot?: string,
+  extensionPath?: string
+): AgentDomainService {
+  return new AgentDomainService(logger, workspaceRoot, extensionPath);
 }

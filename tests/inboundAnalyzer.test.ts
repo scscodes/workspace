@@ -50,8 +50,8 @@ describe("InboundAnalyzer.analyze", () => {
     vi.spyOn(git, "diff").mockResolvedValueOnce(
       success("M\tsrc/conflict.ts")
     );
-    vi.spyOn(git, "getDiff").mockResolvedValueOnce(
-      success("M\tsrc/conflict.ts")
+    vi.spyOn(git, "getAllChanges").mockResolvedValueOnce(
+      success([{ path: "src/conflict.ts", status: "M", additions: 5, deletions: 2 }])
     );
 
     const result = await analyzer.analyze();
@@ -75,8 +75,8 @@ describe("InboundAnalyzer.analyze", () => {
     vi.spyOn(git, "diff").mockResolvedValueOnce(
       success("A\tsrc/feature.ts")
     );
-    vi.spyOn(git, "getDiff").mockResolvedValueOnce(
-      success("A\tsrc/feature.ts")
+    vi.spyOn(git, "getAllChanges").mockResolvedValueOnce(
+      success([{ path: "src/feature.ts", status: "A", additions: 10, deletions: 0 }])
     );
 
     const result = await analyzer.analyze();

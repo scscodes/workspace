@@ -1,0 +1,21 @@
+{
+  "name": "sync-repo",
+  "description": "Check git status then pull. Safe sync with no writes.",
+  "version": "1.0.0",
+  "steps": [
+    {
+      "id": "status",
+      "command": "git.status",
+      "params": {},
+      "onSuccess": "pull",
+      "onFailure": "exit"
+    },
+    {
+      "id": "pull",
+      "command": "git.pull",
+      "params": {},
+      "onSuccess": "exit",
+      "onFailure": "exit"
+    }
+  ]
+}
