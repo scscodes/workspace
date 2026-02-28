@@ -20,7 +20,8 @@ const ANALYTICS_EXCLUDE = [
     "**/package-lock.json",
 ];
 class GitAnalyzer {
-    constructor() {
+    constructor(workspaceRoot = process.cwd()) {
+        this.workspaceRoot = workspaceRoot;
         this.cacheMap = new Map();
         this.cacheTTLMs = 10 * 60 * 1000; // 10 minutes
     }
@@ -98,7 +99,7 @@ class GitAnalyzer {
             if (opts.author) {
                 cmd += ` --author="${opts.author}"`;
             }
-            const output = execSync(cmd, { encoding: "utf-8", stdio: ["pipe", "pipe", "ignore"] });
+            const output = execSync(cmd, { encoding: "utf-8", stdio: ["pipe", "pipe", "ignore"], cwd: this.workspaceRoot });
             const commits = [];
             let currentCommit = null;
             const commitLines = new Map();
@@ -207,7 +208,7 @@ class GitAnalyzer {
                         insertions: 0,
                         deletions: 0,
                         volatility: 0,
-                        authors: new Set(),
+                        authors: [],
                         lastModified: commit.date,
                         risk: "low",
                     });
@@ -216,7 +217,9 @@ class GitAnalyzer {
                 metric.commitCount++;
                 metric.insertions += insertions;
                 metric.deletions += deletions;
-                metric.authors.add(commit.author);
+                if (!metric.authors.includes(commit.author)) {
+                    metric.authors.push(commit.author);
+                }
                 if (commit.date > metric.lastModified) {
                     metric.lastModified = commit.date;
                 }
@@ -379,10 +382,6 @@ class GitAnalyzer {
      */
     exportToJSON(report) {
         return JSON.stringify(report, (_key, value) => {
-            // Convert Sets to arrays for serialization
-            if (value instanceof Set) {
-                return Array.from(value);
-            }
             if (value instanceof Date) {
                 return value.toISOString();
             }
@@ -411,7 +410,7 @@ class GitAnalyzer {
         lines.push("Files");
         lines.push("Path,Commits,Insertions,Deletions,Volatility,Risk,Authors,Last Modified");
         for (const file of report.files.slice(0, 100)) {
-            lines.push(`${csvStr(file.path)},${file.commitCount},${file.insertions},${file.deletions},${file.volatility.toFixed(2)},${file.risk},${csvStr(Array.from(file.authors).join(";"))},${file.lastModified.toISOString()}`);
+            lines.push(`${csvStr(file.path)},${file.commitCount},${file.insertions},${file.deletions},${file.volatility.toFixed(2)},${file.risk},${csvStr(file.authors.join(";"))},${file.lastModified.toISOString()}`);
         }
         lines.push("");
         // Authors section

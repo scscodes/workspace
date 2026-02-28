@@ -125,7 +125,7 @@ export declare class GitDomainService implements DomainService {
     batchCommitter: BatchCommitter;
     inboundAnalyzer: InboundAnalyzer;
     analyzer: GitAnalyzer;
-    constructor(gitProvider: GitProvider, logger: Logger);
+    constructor(gitProvider: GitProvider, logger: Logger, workspaceRoot?: string);
     /**
      * Initialize domain — verify git is available, check repo state.
      */
@@ -138,5 +138,5 @@ export declare class GitDomainService implements DomainService {
 /**
  * Factory function — creates and returns git domain service.
  */
-export declare function createGitDomain(gitProvider: GitProvider, logger: Logger): GitDomainService;
+export declare function createGitDomain(gitProvider: GitProvider, logger: Logger, workspaceRoot?: string): GitDomainService;
 //# sourceMappingURL=service.d.ts.map

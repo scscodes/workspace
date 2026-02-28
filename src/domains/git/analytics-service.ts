@@ -21,6 +21,7 @@ import {
   GitAnalyticsReport,
   TrendData,
 } from "./analytics-types";
+import { ANALYTICS_SETTINGS, CACHE_SETTINGS } from "../../constants";
 
 /** Glob patterns to exclude from file-level analytics (build artifacts, deps) */
 const ANALYTICS_EXCLUDE = [
@@ -36,7 +37,7 @@ const ANALYTICS_EXCLUDE = [
 
 export class GitAnalyzer {
   private cacheMap: Map<string, CachedAnalytics> = new Map();
-  private cacheTTLMs = 10 * 60 * 1000; // 10 minutes
+  private readonly cacheTTLMs = CACHE_SETTINGS.ANALYTICS_TTL_MS;
 
   constructor(private readonly workspaceRoot: string = process.cwd()) {}
 
@@ -80,13 +81,13 @@ export class GitAnalyzer {
     // Build frequency data
     const commitFrequency = this.buildCommitFrequency(commits);
 
-    // Top 10 churn files
-    const churnFiles = files.sort((a, b) => b.volatility - a.volatility).slice(0, 10);
+    // Top churn files
+    const churnFiles = files.sort((a, b) => b.volatility - a.volatility).slice(0, ANALYTICS_SETTINGS.TOP_CHURN_FILES_COUNT);
 
-    // Top 5 authors
+    // Top authors
     const topAuthors = authors
       .sort((a, b) => b.commits - a.commits)
-      .slice(0, 5);
+      .slice(0, ANALYTICS_SETTINGS.TOP_AUTHORS_COUNT);
 
     const report: GitAnalyticsReport = {
       period: opts.period,
@@ -286,9 +287,9 @@ export class GitAnalyzer {
           : 0;
 
       // Determine risk level
-      if (metric.volatility > 100) {
+      if (metric.volatility > ANALYTICS_SETTINGS.RISK_HIGH_VOLATILITY) {
         metric.risk = "high";
-      } else if (metric.volatility > 30) {
+      } else if (metric.volatility > ANALYTICS_SETTINGS.RISK_MEDIUM_VOLATILITY) {
         metric.risk = "medium";
       } else {
         metric.risk = "low";
@@ -342,8 +343,8 @@ export class GitAnalyzer {
     const firstHalf = commits.slice(0, mid);
     const secondHalf = commits.slice(mid);
 
-    const firstAvg = firstHalf.length > 0 ? firstHalf.length / 4 : 0; // Normalize to weeks
-    const secondAvg = secondHalf.length > 0 ? secondHalf.length / 4 : 0;
+    const firstAvg = firstHalf.length > 0 ? firstHalf.length / ANALYTICS_SETTINGS.TREND_NORMALIZE_WEEKS : 0;
+    const secondAvg = secondHalf.length > 0 ? secondHalf.length / ANALYTICS_SETTINGS.TREND_NORMALIZE_WEEKS : 0;
 
     const commitSlope = secondAvg - firstAvg;
     const commitDirection = this.getDirection(commitSlope);
@@ -358,7 +359,7 @@ export class GitAnalyzer {
       commitTrend: {
         slope: commitSlope,
         direction: commitDirection,
-        confidence: 0.75,
+        confidence: ANALYTICS_SETTINGS.TREND_CONFIDENCE,
       },
       volatilityTrend: {
         slope: volatilitySlope,
@@ -371,8 +372,8 @@ export class GitAnalyzer {
    * Get trend direction from slope
    */
   private getDirection(slope: number): "up" | "stable" | "down" {
-    if (slope > 0.5) return "up";
-    if (slope < -0.5) return "down";
+    if (slope > ANALYTICS_SETTINGS.TREND_SLOPE_THRESHOLD) return "up";
+    if (slope < -ANALYTICS_SETTINGS.TREND_SLOPE_THRESHOLD) return "down";
     return "stable";
   }
 
@@ -508,7 +509,7 @@ export class GitAnalyzer {
     lines.push(
       "Path,Commits,Insertions,Deletions,Volatility,Risk,Authors,Last Modified"
     );
-    for (const file of report.files.slice(0, 100)) {
+    for (const file of report.files.slice(0, ANALYTICS_SETTINGS.CSV_MAX_FILES)) {
       lines.push(
         `${csvStr(file.path)},${file.commitCount},${file.insertions},${file.deletions},${file.volatility.toFixed(2)},${file.risk},${csvStr(file.authors.join(";"))},${file.lastModified.toISOString()}`
       );

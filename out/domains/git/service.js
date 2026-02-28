@@ -704,7 +704,7 @@ exports.GIT_COMMANDS = [
     "git.analyzeInbound",
 ];
 class GitDomainService {
-    constructor(gitProvider, logger) {
+    constructor(gitProvider, logger, workspaceRoot = process.cwd()) {
         this.name = "git";
         this.handlers = {};
         this.gitProvider = gitProvider;
@@ -715,8 +715,8 @@ class GitDomainService {
         this.batchCommitter = new BatchCommitter(gitProvider, logger);
         // Initialize inbound analyzer
         this.inboundAnalyzer = new InboundAnalyzer(gitProvider, logger);
-        // Initialize analytics
-        this.analyzer = new analytics_service_1.GitAnalyzer();
+        // Initialize analytics — pass workspace root so git log runs in the correct repo
+        this.analyzer = new analytics_service_1.GitAnalyzer(workspaceRoot);
         // Initialize handlers
         this.handlers = {
             "git.status": (0, handlers_1.createStatusHandler)(gitProvider, logger),
@@ -768,7 +768,7 @@ exports.GitDomainService = GitDomainService;
 /**
  * Factory function — creates and returns git domain service.
  */
-function createGitDomain(gitProvider, logger) {
-    return new GitDomainService(gitProvider, logger);
+function createGitDomain(gitProvider, logger, workspaceRoot = process.cwd()) {
+    return new GitDomainService(gitProvider, logger, workspaceRoot);
 }
 //# sourceMappingURL=service.js.map

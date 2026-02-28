@@ -173,7 +173,7 @@ async function activate(context) {
         return result;
     };
     // Register domains
-    const gitDomain = (0, service_1.createGitDomain)(gitProvider, logger);
+    const gitDomain = (0, service_1.createGitDomain)(gitProvider, logger, workspaceRoot);
     const hygieneDomain = (0, service_2.createHygieneDomain)(workspaceProvider, logger);
     const chatDomain = (0, service_3.createChatDomain)(gitProvider, logger, (cmd, ctx) => router.dispatch(cmd, ctx));
     const workflowDomain = (0, service_4.createWorkflowDomain)(logger, stepRunner, workspaceRoot, extensionPath);
@@ -193,7 +193,8 @@ async function activate(context) {
     const cmdCtx = getCommandContext(context);
     // Git analytics webview panel (full-width editor tab)
     const analyticsPanel = new webview_provider_1.AnalyticsWebviewProvider(context.extensionUri, workspaceRoot, async (opts) => {
-        const result = await router.dispatch({ name: "git.showAnalytics", params: opts }, cmdCtx);
+        const freshCtx = getCommandContext(context);
+        const result = await router.dispatch({ name: "git.showAnalytics", params: opts }, freshCtx);
         if (result.kind === "ok") {
             return result.value;
         }

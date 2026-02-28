@@ -125,6 +125,12 @@ export const CACHE_SETTINGS = {
 
   /** Git status cache TTL in milliseconds (5 minutes) */
   GIT_STATUS_TTL_MS: 5 * 60 * 1000,
+
+  /** Git analytics report cache TTL in milliseconds (10 minutes) */
+  ANALYTICS_TTL_MS: 10 * 60 * 1000,
+
+  /** Dead code scan cache TTL in milliseconds (5 minutes) */
+  DEAD_CODE_TTL_MS: 5 * 60 * 1000,
 } as const;
 
 // ============================================================================
@@ -209,7 +215,7 @@ export const HYGIENE_SETTINGS = {
   LOG_FILE_PATTERNS: ["*.log", "debug.log", "*-error.log"] as const,
 
   /** Temporary file patterns */
-  TEMP_FILE_PATTERNS: ["*.tmp", "*.temp", "*.bak", "*~"] as const,
+  TEMP_FILE_PATTERNS: ["*.tmp", "*.temp", "*.bak", "*~", "*.orig", "*.swp"] as const,
 } as const;
 
 // ============================================================================
@@ -454,6 +460,40 @@ export const AGENT_SETTINGS = {
 
   /** Agent discovery timeout in milliseconds */
   DISCOVERY_TIMEOUT_MS: 5 * 1000,
+} as const;
+
+// ============================================================================
+// Git Analytics Settings
+// ============================================================================
+
+export const ANALYTICS_SETTINGS = {
+  /** Number of high-churn files to surface in the summary report */
+  TOP_CHURN_FILES_COUNT: 10,
+
+  /** Number of top authors to surface in the summary report */
+  TOP_AUTHORS_COUNT: 5,
+
+  /** Maximum file rows written to a CSV export */
+  CSV_MAX_FILES: 100,
+
+  /** Volatility score above which a file is classified as "high" risk */
+  RISK_HIGH_VOLATILITY: 100,
+
+  /** Volatility score above which a file is classified as "medium" risk */
+  RISK_MEDIUM_VOLATILITY: 30,
+
+  /** Confidence score assigned to commit trend calculations (0–1) */
+  TREND_CONFIDENCE: 0.75,
+
+  /** Minimum slope magnitude to classify a trend as "up" or "down" vs "stable" */
+  TREND_SLOPE_THRESHOLD: 0.5,
+
+  /**
+   * Divisor used to normalize each trend half-period to a per-week rate.
+   * NOTE: Currently a fixed estimate. See docs/TODO.md for the known limitation
+   * (does not account for actual period length — tracked for future fix).
+   */
+  TREND_NORMALIZE_WEEKS: 4,
 } as const;
 
 // ============================================================================

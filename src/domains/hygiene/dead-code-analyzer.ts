@@ -9,9 +9,7 @@
 import * as ts from "typescript";
 import * as path from "path";
 import { DeadCodeItem, DeadCodeScan, Logger } from "../../types";
-import { DEAD_CODE_DIAGNOSTIC_CODES, HYGIENE_SETTINGS } from "../../constants";
-
-const CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes
+import { CACHE_SETTINGS, DEAD_CODE_DIAGNOSTIC_CODES, HYGIENE_SETTINGS } from "../../constants";
 
 interface CachedScan {
   scan: DeadCodeScan;
@@ -29,7 +27,7 @@ export class DeadCodeAnalyzer {
    */
   analyze(workspaceRoot: string): DeadCodeScan {
     const cached = this.cache.get(workspaceRoot);
-    if (cached && Date.now() - cached.cachedAt < CACHE_TTL_MS) {
+    if (cached && Date.now() - cached.cachedAt < CACHE_SETTINGS.DEAD_CODE_TTL_MS) {
       this.logger.debug("Dead code analyzer: cache hit", "DeadCodeAnalyzer");
       return cached.scan;
     }

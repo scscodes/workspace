@@ -91,22 +91,11 @@ export function createScanHandler(
         ...meridianIgnorePatterns,
       ];
 
-      // --- Dead files: temp/backup patterns ---
+      // --- Dead files: temp/backup patterns (sourced from HYGIENE_SETTINGS.TEMP_FILE_PATTERNS) ---
       const deadFiles: string[] = [];
-      const deadPatterns = [
-        "**/*.bak",
-        "**/*.tmp",
-        "**/*.temp",
-        "**/*.orig",
-        "**/*.swp",
-        "**/*~",
-        ...HYGIENE_SETTINGS.TEMP_FILE_PATTERNS.map((p) => `**/${p}`),
-      ];
+      const deadPatterns = HYGIENE_SETTINGS.TEMP_FILE_PATTERNS.map((p) => `**/${p}`);
 
-      // Deduplicate patterns before scanning
-      const uniqueDeadPatterns = [...new Set(deadPatterns)];
-
-      for (const pattern of uniqueDeadPatterns) {
+      for (const pattern of deadPatterns) {
         const result = await workspaceProvider.findFiles(pattern);
         if (result.kind === "ok") {
           for (const f of result.value) {
