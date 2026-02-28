@@ -927,7 +927,7 @@ export class GitDomainService implements DomainService {
   // Analytics component
   public analyzer: GitAnalyzer;
 
-  constructor(gitProvider: GitProvider, logger: Logger) {
+  constructor(gitProvider: GitProvider, logger: Logger, workspaceRoot: string = process.cwd()) {
     this.gitProvider = gitProvider;
     this.logger = logger;
 
@@ -939,8 +939,8 @@ export class GitDomainService implements DomainService {
     // Initialize inbound analyzer
     this.inboundAnalyzer = new InboundAnalyzer(gitProvider, logger);
 
-    // Initialize analytics
-    this.analyzer = new GitAnalyzer();
+    // Initialize analytics — pass workspace root so git log runs in the correct repo
+    this.analyzer = new GitAnalyzer(workspaceRoot);
 
     // Initialize handlers
     this.handlers = {
@@ -1022,7 +1022,8 @@ export class GitDomainService implements DomainService {
  */
 export function createGitDomain(
   gitProvider: GitProvider,
-  logger: Logger
+  logger: Logger,
+  workspaceRoot: string = process.cwd()
 ): GitDomainService {
-  return new GitDomainService(gitProvider, logger);
+  return new GitDomainService(gitProvider, logger, workspaceRoot);
 }

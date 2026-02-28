@@ -33,8 +33,7 @@ if (vscode) {
     }
   });
 
-  // Auto-fetch data on first load
-  postRefresh();
+  // Initial data arrives via the buffered "init" message posted by openPanel()
 }
 
 /**

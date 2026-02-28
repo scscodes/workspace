@@ -169,7 +169,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   };
 
   // Register domains
-  const gitDomain = createGitDomain(gitProvider, logger);
+  const gitDomain = createGitDomain(gitProvider, logger, workspaceRoot);
   const hygieneDomain = createHygieneDomain(workspaceProvider, logger);
   const chatDomain = createChatDomain(
     gitProvider,
@@ -200,7 +200,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     context.extensionUri,
     workspaceRoot,
     async (opts) => {
-      const result = await router.dispatch({ name: "git.showAnalytics", params: opts }, cmdCtx);
+      const freshCtx = getCommandContext(context);
+      const result = await router.dispatch({ name: "git.showAnalytics", params: opts }, freshCtx);
       if (result.kind === "ok") { return result.value as GitAnalyticsReport; }
       throw new Error((result as any).error?.message ?? "Analytics failed");
     }

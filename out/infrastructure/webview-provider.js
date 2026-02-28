@@ -91,8 +91,18 @@ class AnalyticsWebviewProvider {
                 const report = await this.onFilter(msg.payload);
                 this.panel?.webview.postMessage({ type: "init", payload: report });
             }
-            catch {
-                // Filter failure is non-fatal — panel keeps current data
+            catch (e) {
+                console.error("[Meridian] git analytics filter error:", e);
+            }
+        }
+        else if (msg.type === "refresh") {
+            try {
+                const period = msg.payload?.period ?? "3mo";
+                const report = await this.onFilter({ period });
+                this.panel?.webview.postMessage({ type: "init", payload: report });
+            }
+            catch (e) {
+                console.error("[Meridian] git analytics refresh error:", e);
             }
         }
         else if (msg.type === "openFile") {
@@ -153,8 +163,8 @@ class HygieneAnalyticsWebviewProvider {
                 const report = await this.onRefresh();
                 this.panel?.webview.postMessage({ type: "init", payload: report });
             }
-            catch {
-                // Refresh failure is non-fatal
+            catch (e) {
+                console.error("[Meridian] hygiene analytics refresh error:", e);
             }
         }
         else if (msg.type === "openSettings") {

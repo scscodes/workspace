@@ -81,16 +81,16 @@ export class AnalyticsWebviewProvider {
       try {
         const report = await this.onFilter(msg.payload as AnalyticsOptions);
         this.panel?.webview.postMessage({ type: "init", payload: report });
-      } catch {
-        // Filter failure is non-fatal — panel keeps current data
+      } catch (e) {
+        console.error("[Meridian] git analytics filter error:", e);
       }
     } else if (msg.type === "refresh") {
       try {
         const period = (msg.payload as any)?.period ?? "3mo";
         const report = await this.onFilter({ period } as AnalyticsOptions);
         this.panel?.webview.postMessage({ type: "init", payload: report });
-      } catch {
-        // non-fatal — panel keeps current state
+      } catch (e) {
+        console.error("[Meridian] git analytics refresh error:", e);
       }
     } else if (msg.type === "openFile") {
       const abs = path.join(this.workspaceRoot, msg.payload as string);
@@ -172,8 +172,8 @@ export class HygieneAnalyticsWebviewProvider {
       try {
         const report = await this.onRefresh();
         this.panel?.webview.postMessage({ type: "init", payload: report });
-      } catch {
-        // Refresh failure is non-fatal
+      } catch (e) {
+        console.error("[Meridian] hygiene analytics refresh error:", e);
       }
     } else if (msg.type === "openSettings") {
       vscode.commands.executeCommand("workbench.action.openSettings", "meridian.hygiene");

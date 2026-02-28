@@ -38,6 +38,8 @@ export class GitAnalyzer {
   private cacheMap: Map<string, CachedAnalytics> = new Map();
   private cacheTTLMs = 10 * 60 * 1000; // 10 minutes
 
+  constructor(private readonly workspaceRoot: string = process.cwd()) {}
+
   /**
    * Generate cache key from options
    */
@@ -133,7 +135,7 @@ export class GitAnalyzer {
         cmd += ` --author="${opts.author}"`;
       }
 
-      const output = execSync(cmd, { encoding: "utf-8", stdio: ["pipe", "pipe", "ignore"] });
+      const output = execSync(cmd, { encoding: "utf-8", stdio: ["pipe", "pipe", "ignore"], cwd: this.workspaceRoot });
 
       const commits: CommitMetric[] = [];
       let currentCommit: Partial<CommitMetric> | null = null;
@@ -257,7 +259,7 @@ export class GitAnalyzer {
             insertions: 0,
             deletions: 0,
             volatility: 0,
-            authors: new Set(),
+            authors: [],
             lastModified: commit.date,
             risk: "low",
           });
@@ -267,7 +269,9 @@ export class GitAnalyzer {
         metric.commitCount++;
         metric.insertions += insertions;
         metric.deletions += deletions;
-        metric.authors.add(commit.author);
+        if (!metric.authors.includes(commit.author)) {
+          metric.authors.push(commit.author);
+        }
         if (commit.date > metric.lastModified) {
           metric.lastModified = commit.date;
         }
@@ -466,10 +470,6 @@ export class GitAnalyzer {
    */
   exportToJSON(report: GitAnalyticsReport): string {
     return JSON.stringify(report, (_key, value) => {
-      // Convert Sets to arrays for serialization
-      if (value instanceof Set) {
-        return Array.from(value);
-      }
       if (value instanceof Date) {
         return value.toISOString();
       }
@@ -510,7 +510,7 @@ export class GitAnalyzer {
     );
     for (const file of report.files.slice(0, 100)) {
       lines.push(
-        `${csvStr(file.path)},${file.commitCount},${file.insertions},${file.deletions},${file.volatility.toFixed(2)},${file.risk},${csvStr(Array.from(file.authors).join(";"))},${file.lastModified.toISOString()}`
+        `${csvStr(file.path)},${file.commitCount},${file.insertions},${file.deletions},${file.volatility.toFixed(2)},${file.risk},${csvStr(file.authors.join(";"))},${file.lastModified.toISOString()}`
       );
     }
     lines.push("");

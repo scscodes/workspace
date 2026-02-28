@@ -46,7 +46,7 @@ export interface FileMetric {
   insertions: number;
   deletions: number;
   volatility: number; // (insertions + deletions) / commitCount
-  authors: Set<string>;
+  authors: string[];
   lastModified: Date;
   risk: FileRiskLevel;
 }
@@ -136,7 +136,7 @@ export interface CachedAnalytics {
 /**
  * Webview message format
  */
-export type AnalyticsWebviewMessageType = "init" | "filter" | "export";
+export type AnalyticsWebviewMessageType = "init" | "filter" | "export" | "refresh";
 
 export interface AnalyticsWebviewMessage {
   type: AnalyticsWebviewMessageType;
