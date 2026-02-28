@@ -159,6 +159,7 @@ button:hover {
   border: 1px solid var(--vscode-input-border, #555);
   padding: 14px 16px;
   border-radius: 6px;
+  height: 220px; /* constrain donut size ~50% of previous */
 }
 
 .chart-container canvas {
